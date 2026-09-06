@@ -1,0 +1,73 @@
+STACK FRONTEND
+
+- React
+- TypeScript
+- Vite
+- TailwindCSS
+- React Query
+- React Router
+- PWA
+- IndexedDB
+
+STACK BACKEND
+
+- Django
+- Django REST Framework
+- PostgreSQL
+
+SERVICES
+
+- Redis
+- Celery
+- Celery Beat
+- MinIO
+- ClamAV
+- Nginx
+
+INFRASTRUCTURE
+
+- Docker
+- Docker Compose
+
+ARCHITECTURE
+
+React PWA
+      |
+Django REST API
+      |
+-----------------------------------
+|         |         |             |
+Postgres  Redis     MinIO       Celery
+
+MODE HORS LIGNE
+
+IndexedDB
+     |
+Synchronisation
+     |
+Django
+     |
+PostgreSQL
+
+STOCKAGE FICHIERS
+
+React
+  |
+Django
+  |
+ClamAV
+  |
+MinIO
+
+MULTI-TENANT
+
+Une seule application.
+Une seule base PostgreSQL.
+Séparation logique via company_id.
+
+STRATÉGIE IDENTIFIANTS
+
+id = BigAutoField
+uuid = UUID public
+
+Toutes les APIs exposent les UUID.

@@ -1,0 +1,23 @@
+Avant de coder :
+
+1. Analyser le besoin.
+2. Expliquer le plan.
+3. Identifier les impacts.
+4. Attendre validation.
+
+Toujours :
+
+- créer des migrations
+- écrire des tests
+- documenter le code
+- respecter le multi-tenant
+- respecter les UUID
+- respecter les permissions
+
+Ne jamais :
+
+- supprimer du code sans justification
+- modifier plusieurs modules en même temps
+- contourner la sécurité
+- introduire de la duplication
+- casser la compatibilité API

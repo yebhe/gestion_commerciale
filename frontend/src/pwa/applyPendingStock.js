@@ -1,0 +1,123 @@
+import db from './db';
+
+/**
+ * Ajuste le stock affiché des produits en incluant les mouvements
+ * de stock et les ventes en attente de synchronisation.
+ */
+export async function applyPendingStock(products, targetStoreUuid) {
+  let pending = await db.syncQueue
+    .where('entity_type')
+    .anyOf(['stockMovement', 'stockTransfer', 'inventory', 'sale'])
+    .toArray();
+  pending = pending.filter((op) => op.status !== 'SYNCED');
+  if (!pending.length) return products;
+
+  // Un CREATE suivi d'un DELETE pour le même UUID s'annulent.
+  const deletedByUuid = new Map();
+  const createdByUuid = new Map();
+  for (const op of pending) {
+    if (op.operation_type === 'DELETE' && op.entity_uuid) deletedByUuid.set(op.entity_uuid, op);
+    if (op.operation_type === 'CREATE' && op.entity_uuid) createdByUuid.set(op.entity_uuid, op);
+  }
+  const cancelled = new Set();
+  for (const uuid of deletedByUuid.keys()) {
+    if (createdByUuid.has(uuid)) {
+      cancelled.add(uuid);
+    }
+  }
+  const relevant = pending.filter((op) => {
+    if (op.operation_type === 'CREATE' && cancelled.has(op.entity_uuid)) return false;
+    if (op.operation_type === 'DELETE' && cancelled.has(op.entity_uuid)) return false;
+    return true;
+  });
+  if (!relevant.length) return products;
+
+  const stockDeletedIds = [];
+  const saleDeletedIds = [];
+  for (const op of relevant) {
+    if (op.operation_type !== 'DELETE' || !op.entity_uuid) continue;
+    if (op.entity_type === 'sale') saleDeletedIds.push(op.entity_uuid);
+    else stockDeletedIds.push(op.entity_uuid);
+  }
+  const [stockDeletedRows, saleDeletedRows] = await Promise.all([
+    stockDeletedIds.length ? db.stockMovements.where('uuid').anyOf(stockDeletedIds).toArray() : Promise.resolve([]),
+    saleDeletedIds.length ? db.sales.where('uuid').anyOf(saleDeletedIds).toArray() : Promise.resolve([]),
+  ]);
+  const rowByUuid = {
+    ...Object.fromEntries(stockDeletedRows.map((m) => [m.uuid, m])),
+    ...Object.fromEntries(saleDeletedRows.map((m) => [m.uuid, m])),
+  };
+
+  return products.map((p) => {
+    const productUuid = p.uuid;
+    let delta = 0;
+    let adjusted = false;
+    let newQty = null;
+
+    const matchesStore = (store) => !targetStoreUuid || store === targetStoreUuid;
+
+    for (const op of relevant) {
+      if (op.operation_type === 'DELETE') {
+        const m = rowByUuid[op.entity_uuid];
+        if (!m) continue;
+        if (op.entity_type === 'sale') {
+          if (!matchesStore(m.store)) continue;
+          for (const item of m.items || []) {
+            if (item.product === productUuid) delta += (item.quantity || 0);
+          }
+          continue;
+        }
+        if ((m.product !== productUuid && m.product_uuid !== productUuid)) continue;
+        const mType = m.type || m.movement_type;
+        if ((mType === 'in' || mType === 'out') && matchesStore(m.store)) {
+          delta += (mType === 'out' ? 1 : -1) * (m.quantity || 0);
+        } else if (m.from_store && m.to_store) {
+          if (matchesStore(m.from_store)) delta += (m.quantity || 0);
+          if (matchesStore(m.to_store)) delta -= (m.quantity || 0);
+        }
+        continue;
+      }
+
+      const payload = op.payload || {};
+      if (op.entity_type === 'sale') {
+        if (!matchesStore(payload.store)) continue;
+        for (const item of payload.items || []) {
+          if (item.product === productUuid) delta -= (item.quantity || 0);
+        }
+        continue;
+      }
+
+      if (payload.product !== productUuid) continue;
+      const type = payload.type || payload.movement_type;
+      if ((type === 'in' || type === 'out') && matchesStore(payload.store)) {
+        delta += (type === 'in' ? 1 : -1) * (payload.quantity || 0);
+      } else if (type === 'adjustment' && matchesStore(payload.store)) {
+        adjusted = true;
+        newQty = payload.new_quantity ?? payload.quantity;
+      } else if (payload.from_store && payload.to_store) {
+        if (matchesStore(payload.from_store)) delta -= (payload.quantity || 0);
+        if (matchesStore(payload.to_store)) delta += (payload.quantity || 0);
+      }
+    }
+
+    const base = !targetStoreUuid
+      ? (p.stock_quantity || 0)
+      : (p.stock_by_store?.find((s) => s.store?.uuid === targetStoreUuid)?.quantity ?? 0);
+    const final = adjusted ? newQty : base + delta;
+
+    const product = { ...p };
+    if (!targetStoreUuid) {
+      product.stock_quantity = final;
+    } else {
+      const sbs = [...(p.stock_by_store || [])];
+      const idx = sbs.findIndex((s) => s.store?.uuid === targetStoreUuid);
+      if (idx >= 0) {
+        sbs[idx] = { ...sbs[idx], quantity: final };
+      } else {
+        sbs.push({ store: { uuid: targetStoreUuid }, quantity: final });
+      }
+      product.stock_by_store = sbs;
+    }
+    return product;
+  });
+}

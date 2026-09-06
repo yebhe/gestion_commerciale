@@ -1,0 +1,761 @@
+================================================================================
+                    GESTION MAGASINS — RÉSUMÉ DU PROJET
+                    (état au 5 septembre 2026)
+================================================================================
+
+SaaS multi-tenant de gestion de magasins (point de vente, stock, produits,
+clients, fournisseurs, rapports) avec fonctionnement HORS LIGNE (PWA).
+
+
+--------------------------------------------------------------------------------
+1. STACK TECHNIQUE
+--------------------------------------------------------------------------------
+
+BACKEND (dossier backend/)
+  - Python / Django 4.2.7
+  - Django REST Framework 3.14 + SimpleJWT (auth par token JWT)
+  - drf-spectacular (documentation Swagger / Redoc)
+  - django-filter, django-cors-headers
+  - PostgreSQL 15 (psycopg2)
+  - Redis 7 + Celery (worker + beat) pour les tâches asynchrones
+  - django-storages + boto3 (stockage S3 / MinIO)
+  - Pillow (images), pyclamd (antivirus ClamAV sur les fichiers uploadés)
+  - gunicorn + whitenoise (prod)
+  - requests (intégration Chap Chap Pay Mobile Money)
+
+FRONTEND (dossier frontend/)
+  - React 18 + Vite 5
+  - react-router-dom 6
+  - TailwindCSS 3, lucide-react (icônes)
+  - axios (appels API), @tanstack/react-query
+  - react-hook-form + zod (formulaires / validation)
+  - recharts (graphiques rapports)
+  - date-fns
+  - PWA : vite-plugin-pwa + Workbox (service worker)
+  - Dexie (IndexedDB) pour le cache local et la file de synchronisation
+
+INFRASTRUCTURE (docker-compose.yml)
+  Services : postgres, redis, backend, celery_worker, celery_beat, minio,
+             clamav, frontend, nginx
+  Fichier additionnel : docker-compose.pwa-test.yml (frontend en mode
+  build + serve pour tester le service worker)
+
+
+--------------------------------------------------------------------------------
+2. ARCHITECTURE MULTI-TENANT
+--------------------------------------------------------------------------------
+
+  - Une COMPANY (entreprise) = un tenant. Elle possède plusieurs STORES
+    (magasins).
+  - Un USER peut appartenir à plusieurs entreprises via des MEMBERSHIPS
+    (un membership = user + company + role + store optionnel).
+  - Le tenant courant est résolu par TenantMiddleware à partir du claim
+    `company_id` du JWT (jamais depuis le body ou un header).
+  - Endpoint /api/auth/switch-company/ pour changer d'entreprise (nouveau
+    JWT).
+  - Isolation à deux niveaux :
+      * scope COMPANY : accès à tous les magasins de l'entreprise
+      * scope STORE   : accès restreint au magasin assigné au membership
+    (request.scope et request.store injectés par HasPermission)
+
+
+--------------------------------------------------------------------------------
+3. RÔLES
+--------------------------------------------------------------------------------
+
+RÔLES PLATEFORME (codés en dur, hors tenant)
+  - SUPER_ADMIN   : user.is_superuser = True. Accès global, voit toutes les
+                    compagnies (/api/companies/all/), application
+                    "Compagnies" dans le dashboard.
+  - SUPPORT_ADMIN : user.is_support_admin = True. Accès support.
+                    Le SUPER_ADMIN hérite des droits SUPPORT_ADMIN.
+
+RÔLES TENANT (table roles, créés automatiquement pour chaque nouvelle
+entreprise par users/role_templates.py, is_system=True)
+
+  Owner (scope COMPANY)
+    Propriétaire : TOUTES les permissions du catalogue.
+
+  Company Admin (scope COMPANY)
+    company.view/update/manage_settings
+    stores.view/create/update/delete/assign_users
+    users.view/create/update/delete/assign_roles
+    roles.view/create/update/delete/assign_permissions
+    reports.view/sales/inventory/export
+    settings.view/update
+
+  Manager (scope STORE)
+    products.* (view, create, update, delete, change_price)
+    categories.* (view, create, update, delete)
+    inventory.* (view, adjust, stock_entry, stock_transfer, view_history)
+    sales.view/create/cancel/refund
+    customers.* (view, create, update, delete)
+    suppliers.* (view, create, update, delete)
+    reports.view/sales/inventory
+
+  Cashier (scope STORE)
+    pos.access, pos.open_session, pos.close_session,
+    pos.print_receipt, pos.reprint_receipt
+    sales.create
+    products.view
+    customers.view
+
+  Stock Manager (scope STORE)
+    products.view/update
+    inventory.view/adjust/stock_entry/stock_transfer/view_history
+    suppliers.view/create/update
+
+  Accountant (scope COMPANY)
+    reports.view/sales/inventory/export
+    sales.view
+    payments.view/create/refund
+
+  + Rôles personnalisés : le Owner / Company Admin peut créer ses propres
+    rôles (nom, description, scope, permissions) via l'application
+    "Employés > Rôles". Les rôles système ne sont ni supprimables ni
+    modifiables au niveau permissions.
+
+
+--------------------------------------------------------------------------------
+4. CATALOGUE DES PERMISSIONS (table permissions, code unique)
+--------------------------------------------------------------------------------
+
+  company        : view, update, manage_settings, transfer_ownership, delete
+  stores         : view, create, update, delete, assign_users
+  users          : view, create, update, delete, assign_roles
+  roles          : view, create, update, delete, assign_permissions
+  products       : view, create, update, delete, change_price
+  categories     : view, create, update, delete
+  suppliers      : view, create, update, delete
+  customers      : view, create, update, delete
+  inventory      : view, adjust, stock_entry, stock_transfer, view_history
+  sales          : view, create, cancel, refund
+  pos            : access, open_session, close_session, print_receipt,
+                   reprint_receipt, apply_discount
+  reports        : view, sales, inventory, export
+  settings       : view, update
+  payments       : view, create, refund
+  files          : view, upload, update, delete
+  notifications  : view, manage
+  audit          : view
+  subscription   : view, update, change_plan, cancel
+  billing        : view, download_invoice, manage_payment_method
+
+MÉCANISME DE VÉRIFICATION (backend/users/permissions.py)
+  Classe HasPermission : 1) user actif  2) entreprise active
+                         3) membership actif  4) permission du rôle
+  Configuration sur les vues : `required_permission` (code unique) ou
+  `permission_map` ({action DRF ou méthode HTTP : code}).
+  Autres classes : IsCompanyMember, IsSuperAdmin, IsSupportAdmin.
+
+  Côté frontend : useAuth().hasPermission(code) ; les applications et
+  sous-sections du dashboard sont filtrées via frontend/src/config/appsCatalog.js.
+
+
+--------------------------------------------------------------------------------
+5. TABLES DE LA BASE DE DONNÉES (PostgreSQL)
+--------------------------------------------------------------------------------
+
+Conventions :
+  - id        BigAutoField, clé primaire interne (jamais exposée dans l'API)
+  - uuid      UUID unique, identifiant public utilisé par l'API et le frontend
+  - FK        clé étrangère ; comportement à la suppression indiqué
+              (CASCADE = supprimé avec le parent, SET_NULL = mis à NULL,
+               PROTECT = suppression interdite)
+  - Soft delete = colonnes is_deleted (bool, défaut false) + deleted_at
+  - Les montants sont des Decimal(12,2) en FCFA
+
+Résumé (26 tables) :
+  users, permissions, roles, roles_permissions (M2M), memberships,
+  companies, stores,
+  categories, products, stock_levels,
+  inventory_movements,
+  customers, suppliers,
+  sales, sale_items, mobile_money_payments, receipts, pos_sessions,
+  company_settings, store_settings,
+  plans, subscriptions,
+  audit_logs, company_files
+  + tables Django natives (auth_group, django_admin_log, django_session,
+    django_celery_beat_*, django_celery_results_*)
+
+--- APP users ---------------------------------------------------------------
+
+TABLE users  (modèle User, remplace auth_user ; login par email)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  email               Email          unique, USERNAME_FIELD
+  password            hash Django
+  first_name          Char(150)      obligatoire
+  last_name           Char(150)      obligatoire
+  phone               Char(20)       nullable
+  avatar              Image          nullable, upload users/avatars/
+  is_support_admin    Bool           défaut false (rôle plateforme SUPPORT_ADMIN)
+  is_superuser        Bool           défaut false (rôle plateforme SUPER_ADMIN)
+  is_staff            Bool           accès admin Django
+  is_active           Bool           défaut true
+  date_joined         DateTime
+  last_login          DateTime       nullable
+  (username désactivé)
+
+TABLE permissions  (catalogue central, données de référence)
+  id                  BigAuto        PK
+  code                Char(100)      unique, ex: "inventory.stock_entry"
+  name                Char(200)
+  description         Text           nullable
+
+TABLE roles
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  name                Char(100)
+  description         Text           nullable
+  is_system           Bool           défaut false (true = Owner, Manager...)
+  scope               Char(10)       COMPANY | STORE, défaut COMPANY
+  UNIQUE (company_id, name)
+
+TABLE roles_permissions  (M2M générée par Django)
+  id                  BigAuto        PK
+  role_id             FK roles       CASCADE
+  permission_id       FK permissions CASCADE
+  UNIQUE (role_id, permission_id)
+
+TABLE memberships  (lien user <-> entreprise <-> rôle)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  user_id             FK users       CASCADE
+  company_id          FK companies   CASCADE
+  role_id             FK roles       CASCADE
+  store_id            FK stores      SET_NULL, nullable (obligatoire si rôle STORE)
+  is_default          Bool           défaut false (entreprise ouverte au login)
+  is_active           Bool           défaut true
+  joined_at           DateTime       auto
+  UNIQUE (user_id, company_id)
+
+--- APP companies -----------------------------------------------------------
+
+TABLE companies  (tenant)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  name                Char(200)
+  slug                Slug(220)      unique, généré depuis name
+  logo                Image          nullable, upload companies/logos/
+  phone               Char(20)       nullable
+  email               Email          nullable
+  address             Char(255)      nullable
+  subscription_status Char(20)       trial | active | suspended | cancelled
+                                     défaut trial
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  propriété is_active = status in (trial, active)
+
+TABLE stores  (magasins d'une entreprise)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  name                Char(200)
+  logo                Image          nullable, upload stores/logos/
+  address             Char(255)      nullable
+  phone               Char(20)       nullable
+  created_at          DateTime       auto
+
+--- APP products ------------------------------------------------------------
+
+TABLE categories
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      SET_NULL, nullable (NULL = partagée)
+  name                Char(200)
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  is_deleted          Bool           soft delete
+  deleted_at          DateTime       nullable
+
+TABLE products
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      CASCADE, nullable (NULL = partagé
+                                     entre tous les magasins)
+  category_id         FK categories  SET_NULL, nullable
+  name                Char(200)
+  description         Text           nullable
+  barcode             Char(64)       nullable, indexé
+  purchase_price      Decimal(12,2)  défaut 0
+  selling_price       Decimal(12,2)  défaut 0
+  image               Image          nullable, chemin
+                                     companies/<id>/stores/<id|shared>/products/
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  is_deleted          Bool           soft delete
+  deleted_at          DateTime       nullable
+  propriétés calculées : stock_quantity (somme des stock_levels),
+                         stock_for_store(store)
+  exposé par l'API   : stock_quantity, stock_by_store[{store, quantity}]
+
+TABLE stock_levels  (stock d'un produit dans un magasin)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  product_id          FK products    CASCADE
+  store_id            FK stores      CASCADE
+  quantity            PositiveInt    défaut 0, jamais négatif
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  UNIQUE (product_id, store_id)
+
+--- APP inventory -----------------------------------------------------------
+
+TABLE inventory_movements  (historique des mouvements de stock)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      CASCADE
+  product_id          FK products    PROTECT (produit non supprimable si
+                                     mouvements existants)
+  type                Char(20)       in | out | adjustment
+  quantity            Integer        delta appliqué au stock_level
+  note                Char(300)      nullable ; les transferts portent
+                                     "Transfert vers/depuis <magasin>"
+  created_at          DateTime       auto
+  Tri par défaut : -created_at
+  Un transfert = 2 lignes (out sur source + in sur destination).
+  DELETE d'un mouvement = annulation : le stock_level est recalculé et
+  une entrée audit "cancel" est créée.
+
+--- APP customers -----------------------------------------------------------
+
+TABLE customers
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      SET_NULL, nullable
+  name                Char(200)
+  phone               Char(20)       nullable
+  email               Email          nullable
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  is_deleted          Bool           soft delete
+  deleted_at          DateTime       nullable
+
+--- APP suppliers -----------------------------------------------------------
+
+TABLE suppliers
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      SET_NULL, nullable
+  name                Char(200)
+  phone               Char(20)       nullable
+  email               Email          nullable
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  is_deleted          Bool           soft delete
+  deleted_at          DateTime       nullable
+
+--- APP sales ---------------------------------------------------------------
+
+TABLE sales  (vente / ticket de caisse)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      CASCADE
+  customer_id         FK customers   SET_NULL, nullable
+  cashier_id          FK users       SET_NULL, nullable (utilisateur ayant
+                                     encaissé)
+  total_amount        Decimal(12,2)  défaut 0
+  payment_method      Char(20)       cash | mobile_money | card | credit
+                                     défaut cash
+  status              Char(20)       pending | completed | cancelled | refunded
+                                     défaut completed
+                                     (pending = Mobile Money en attente)
+  created_at          DateTime       auto
+  Tri par défaut : -created_at
+  Création : décrémente les stock_levels du magasin.
+  Annulation / remboursement : restaure le stock, entrée audit "cancel".
+
+TABLE sale_items  (lignes d'une vente)
+  id                  BigAuto        PK
+  sale_id             FK sales       CASCADE
+  product_id          FK products    PROTECT
+  quantity            PositiveInt    défaut 1
+  unit_price          Decimal(12,2)  prix appliqué au moment de la vente
+  discount            Decimal(12,2)  défaut 0
+
+TABLE mobile_money_payments  (paiement Chap Chap Pay)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  sale_id             O2O sales      CASCADE (une vente = un paiement max)
+  operation_id        Char(100)      unique, identifiant Chap Chap Pay
+  payment_url         URL(500)       nullable, lien de paiement client
+  status              Char(20)       pending | success | failed | canceled |
+                                     expired | error ; défaut pending
+                                     mis à jour par le webhook notify_url
+  raw_response        JSON           nullable, réponse brute du prestataire
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+
+TABLE receipts  (reçu imprimable)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  sale_id             O2O sales      CASCADE
+  receipt_number      Char(50)       unique
+  created_at          DateTime       auto
+
+TABLE pos_sessions  (ouverture / fermeture de caisse)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      CASCADE
+  cashier_id          FK users       SET_NULL, nullable
+  opening_amount      Decimal(12,2)  fond de caisse à l'ouverture
+  closing_amount      Decimal(12,2)  nullable, montant compté à la fermeture
+  status              Char(10)       open | closed, défaut open
+  opened_at           DateTime       auto
+  closed_at           DateTime       nullable
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+  Tri par défaut : -opened_at
+
+--- APP settings ------------------------------------------------------------
+
+TABLE company_settings
+  id                  BigAuto        PK
+  company_id          O2O companies  CASCADE
+  background_color    Char(7)        hex, défaut #f9fafb
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+
+TABLE store_settings
+  id                  BigAuto        PK
+  store_id            O2O stores     CASCADE
+  background_color    Char(7)        hex, vide = hérite de l'entreprise
+  created_at          DateTime       auto
+  updated_at          DateTime       auto
+
+--- APP subscriptions -------------------------------------------------------
+
+TABLE plans  (offres SaaS)
+  id                  BigAuto        PK
+  name                Char(100)      unique
+  price               Decimal(10,2)  défaut 0
+  Tri par défaut : price
+
+TABLE subscriptions
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  plan_id             FK plans       CASCADE
+  status              Char(20)       trial | active | suspended | cancelled
+  starts_at           DateTime
+  expires_at          DateTime       nullable
+  Tri par défaut : -starts_at
+
+--- APP audit ---------------------------------------------------------------
+
+TABLE audit_logs  (journal des actions sensibles)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  user_id             FK users       SET_NULL, nullable
+  action              Char(100)      ex: create, update, cancel, delete
+  object_type         Char(100)      ex: Sale, InventoryMovement, Product
+  object_id           Char(100)      uuid de l'objet concerné
+  metadata            JSON           détails (montant, quantité, magasin...)
+  created_at          DateTime       auto
+  Tri par défaut : -created_at
+
+--- APP files ---------------------------------------------------------------
+
+TABLE company_files  (documents uploadés)
+  id                  BigAuto        PK
+  uuid                UUID           unique
+  company_id          FK companies   CASCADE
+  store_id            FK stores      SET_NULL, nullable
+  path                File           upload companies/files/ (MinIO / S3)
+  mime_type           Char(100)      nullable
+  size                PositiveBigInt octets, défaut 0
+  created_at          DateTime       auto
+  Tri par défaut : -created_at
+  Chaque fichier est scanné par ClamAV avant enregistrement.
+
+--- RELATIONS PRINCIPALES ---------------------------------------------------
+
+  companies 1 --- n stores
+  companies 1 --- n roles          roles n --- n permissions
+  companies 1 --- n memberships    users 1 --- n memberships
+  memberships n --- 1 roles        memberships n --- 0..1 stores
+  companies 1 --- n categories / products / customers / suppliers
+  products n --- 0..1 categories
+  products 1 --- n stock_levels    stores 1 --- n stock_levels
+  products 1 --- n inventory_movements     stores 1 --- n inventory_movements
+  stores 1 --- n sales             sales 1 --- n sale_items
+  sales 1 --- 0..1 mobile_money_payments   sales 1 --- 0..1 receipts
+  sales n --- 0..1 customers       sales n --- 0..1 users (cashier)
+  stores 1 --- n pos_sessions
+  companies 1 --- 1 company_settings       stores 1 --- 1 store_settings
+  companies 1 --- n subscriptions  plans 1 --- n subscriptions
+  companies 1 --- n audit_logs / company_files
+
+
+--------------------------------------------------------------------------------
+5 bis. TABLES LOCALES INDEXEDDB (frontend, Dexie — frontend/src/pwa/db.js)
+--------------------------------------------------------------------------------
+
+Base : une seule base IndexedDB versionnée (DB_VERSION). Chaque ligne porte
+company_uuid, store_uuid, user_uuid, device_uuid pour isoler les données par
+entreprise / magasin / utilisateur / appareil.
+
+Format Dexie : "cléPrimaire, index1, index2, ..." ; "++id" = auto-incrément.
+
+CACHE DE LECTURE (copie des données serveur, rafraîchie au login et à chaque
+synchronisation)
+  products        uuid, company_uuid, store_uuid, user_uuid, device_uuid,
+                  name, updated_at
+                  (+ champs métier : stock_quantity, stock_by_store, prix...)
+  categories      uuid, company_uuid, store_uuid, user_uuid, device_uuid,
+                  name, updated_at
+  customers       uuid, company_uuid, user_uuid, device_uuid, name, updated_at
+  suppliers       uuid, company_uuid, user_uuid, device_uuid, name, updated_at
+  stores          uuid, company_uuid, user_uuid, device_uuid, name, updated_at
+  settings        key, company_uuid, user_uuid, device_uuid, updated_at
+
+FILE D'ATTENTE ET JOURNAL
+  syncQueue       ++id, operation_uuid, company_uuid, store_uuid, user_uuid,
+                  device_uuid, entity_type, entity_uuid, operation_type,
+                  status, created_at, synced_at
+                  - entity_type    : product | category | customer | supplier
+                                     | sale | posSession | stockMovement
+                                     | stockTransfer | inventory
+                  - operation_type : CREATE | UPDATE | DELETE
+                  - status         : PENDING_SYNC | SYNCING | SYNCED | FAILED
+                                     | conflict
+                  - payload        : corps de la requête à rejouer
+                  - retry_count, last_error
+  syncLog         ++id, company_uuid, store_uuid, user_uuid, device_uuid,
+                  entity_type, operation_type, status, message, created_at
+
+DONNÉES CRÉÉES HORS LIGNE
+  posSessions     uuid, company_uuid, store_uuid, user_uuid, device_uuid,
+                  status, created_at
+  sales           uuid, company_uuid, store_uuid, user_uuid, device_uuid,
+                  status, created_at
+                  (+ items[], total_amount, payment_method, is_deleted)
+  stockMovements  uuid, company_uuid, store_uuid, user_uuid, device_uuid,
+                  product_uuid, movement_type, status, created_at
+                  (+ quantity, note, from_store, to_store, is_deleted)
+  preferences     key, company_uuid, user_uuid, device_uuid
+
+CORRESPONDANCE entity_type -> table locale (ENTITY_TO_TABLE)
+  product -> products          category -> categories
+  customer -> customers        supplier -> suppliers
+  sale -> sales                posSession -> posSessions
+  stockMovement / stockTransfer / inventory -> stockMovements
+
+NETTOYAGE
+  clearCompanyData(companyUuid) : vide les caches d'une entreprise
+  clearCacheData()              : vide les caches au logout mais PRÉSERVE
+                                  syncQueue et posSessions (aucune perte
+                                  d'opération non synchronisée)
+
+
+--------------------------------------------------------------------------------
+6. API REST (préfixe /api/)
+--------------------------------------------------------------------------------
+
+Documentation : /api/schema/, /api/docs/ (Swagger), /api/redoc/
+Admin Django  : /admin/
+
+auth/
+  POST register/                   création entreprise + Owner + rôles système
+  POST login/                      JWT (access + refresh) avec claim company_id
+  POST token/refresh/
+  GET/PATCH profile/
+  GET  permissions/                permissions, rôle, magasin de l'user courant
+  GET  all-permissions/            catalogue complet
+  POST switch-company/
+  CRUD roles/                      + POST roles/{uuid}/assign-permissions/
+  CRUD employees/                  memberships (création user + rôle + magasin)
+
+companies/
+  GET  my/                         entreprises de l'utilisateur
+  GET  all/                        toutes (SUPER_ADMIN)
+  GET/PATCH current/               entreprise courante
+  CRUD stores/
+
+products/
+  CRUD (liste paginée, recherche, filtre ?store=)  + categories/
+  Sérialisation : stock_quantity, stock_by_store[]
+
+inventory/
+  GET/POST/DELETE                  mouvements de stock
+                                   POST type=in / out / adjustment
+                                   (adjustment : champ new_quantity)
+                                   DELETE = annulation (stock recalculé)
+  POST transfer/                   transfert entre magasins
+
+customers/     CRUD
+suppliers/     CRUD
+
+sales/
+  CRUD                             création avec items, décrémente le stock ;
+                                   annulation restaure le stock
+  POST {uuid}/mobile-money/        initie un paiement Chap Chap Pay
+  POST webhooks/chapchappay/       callback de statut
+  CRUD sessions/                   sessions de caisse
+  POST sessions/{uuid}/close/
+
+reports/
+  GET sales/                       rapport ventes (période, magasin)
+  GET inventory/                   rapport stock
+  GET export/                      export CSV/Excel
+
+files/         CRUD (upload avec scan antivirus ClamAV, stockage MinIO)
+audit/         GET  journal d'audit
+subscriptions/ plans/ + abonnements
+settings/      GET/PATCH paramètres entreprise (apparence)
+
+
+--------------------------------------------------------------------------------
+7. FRONTEND — PAGES ET FONCTIONNALITÉS
+--------------------------------------------------------------------------------
+
+ROUTES
+  /login       LoginPage (+ RegisterPage : création d'entreprise)
+  /dashboard   Dashboard (applications en grandes icônes, ?app=xxx&sub=yyy)
+  /pos         Caisse (permission pos.access)
+
+LAYOUT
+  Sidebar (desktop), MobileNav, Topbar (SyncStatus, ConnectionStatus, logout)
+  Interface pensée pour un public peu à l'aise avec l'écrit : grandes icônes,
+  peu de texte.
+
+APPLICATIONS DU DASHBOARD (config/appsCatalog.js)
+  Ventes        : Nouvelle vente, Historique des ventes, Remboursements,
+                  détail d'une vente
+  Produits      : Liste (stock par magasin), Ajouter, Catégories
+  Stock         : Stock disponible (nouveau), Entrée de stock, Ajustement,
+                  Transfert, Historique, annulation d'un mouvement
+  Clients       : Liste, Ajouter
+  Fournisseurs  : Liste, Ajouter
+  Rapports      : Rapport ventes, Rapport stock, Export
+  Employés      : Liste, Ajouter, Rôles (système + personnalisés)
+  Magasins      : gestion des magasins
+  Paramètres    : Apparence (couleur de fond), Informations entreprise
+  Fichiers      : Liste, Téléverser
+  Audit         : journal des actions
+  Compagnies    : (SUPER_ADMIN uniquement) liste de toutes les entreprises
+
+POINT DE VENTE (/pos)
+  - Sélection du magasin (scope COMPANY) ou magasin assigné (scope STORE)
+  - Recherche produits, panier, quantités contrôlées par le stock disponible
+  - Paiement : espèces, Mobile Money (Chap Chap Pay), carte, crédit
+  - Fonctionne hors ligne (vente mise en file d'attente)
+
+CONTRÔLES DE STOCK (frontend)
+  - Entrée : quantité > 0
+  - Ajustement : quantité >= 0
+  - Transfert : quantité > 0 et <= stock du magasin source
+  - Vente : quantité <= stock disponible (y compris offline)
+
+
+--------------------------------------------------------------------------------
+8. MODE HORS LIGNE (PWA) — frontend/src/pwa/
+--------------------------------------------------------------------------------
+
+BASE LOCALE IndexedDB (Dexie, db.js) — tables :
+  products, categories, customers, suppliers, stores, settings   (cache)
+  syncQueue      file d'attente des opérations offline
+                 (operation_uuid, entity_type, entity_uuid,
+                  operation_type CREATE|UPDATE|DELETE, status, payload)
+  syncLog        journal de synchronisation
+  posSessions    sessions de caisse locales
+  sales          ventes créées hors ligne / cache
+  stockMovements mouvements de stock hors ligne / cache
+  preferences    préférences locales
+  Toutes les lignes portent company_uuid / store_uuid / user_uuid / device_uuid.
+
+MODULES AUTORISÉS HORS LIGNE (offlineModules.js)
+  produits, catégories, fournisseurs, clients (CRUD complet)
+  stock (entrée, sortie, ajustement, transfert, historique)
+  POS (ouverture/fermeture session, vente, client, reçu, ventes)
+  rapports (données locales uniquement)
+
+MODULES INTERNET OBLIGATOIRE
+  première connexion, utilisateurs, rôles, permissions, paramètres
+  entreprise, abonnements, facturation, Mobile Money, admin plateforme
+
+COMPOSANTS / MANAGERS
+  networkManager      détection online/offline + latence
+  sessionManager      session locale (user, permissions, company, store)
+                      pour l'authentification hors ligne
+  preloadCache        préchargement des données au login
+  useOfflineCache     lecture API avec repli sur cache
+  useOfflineMutation  mutation offline-first : UUID client, mise à jour du
+                      cache local, mise en file syncQueue, événement
+                      `yebhe:data-changed`
+  syncManager         rejoue la file au retour du réseau, réconcilie le
+                      cache, gère les conflits (409), ignore les paires
+                      CREATE+DELETE annulées, événement `yebhe:synced`
+  applyPendingStock   recalcule le stock affiché en intégrant les
+                      mouvements ET ventes en attente (CREATE/DELETE)
+  useSyncRefresh      rafraîchit les listes après sync / changement de données
+  installManager / InstallPrompt   installation de la PWA
+  updateManager / UpdateBanner     mise à jour du service worker
+  SyncStatus          badge d'état + compteur d'opérations en attente
+  PendingOps          modale : liste des opérations en attente, rejouer /
+                      supprimer
+  SyncConflicts       modale de résolution des conflits de synchronisation
+  SyncOverlay         overlay pendant la synchronisation
+  LogoutConfirm       avertissement si opérations non synchronisées
+  UserChangeBlock     blocage si un autre utilisateur se connecte sur
+                      l'appareil avec des données en attente
+
+
+--------------------------------------------------------------------------------
+9. SÉCURITÉ ET RÈGLES MÉTIER
+--------------------------------------------------------------------------------
+
+  - JWT obligatoire ; company_id issu du token uniquement.
+  - Toutes les requêtes filtrées par request.company (et request.store si
+    rôle STORE).
+  - Rôles système non supprimables.
+  - Stock jamais négatif (StockLevel.quantity PositiveIntegerField, contrôles
+    frontend + backend).
+  - Soft delete sur produits, catégories, clients, fournisseurs.
+  - Journal d'audit (audit_logs) sur les actions sensibles : création /
+    annulation de vente, annulation de mouvement de stock, etc.
+  - Fichiers uploadés scannés par ClamAV, stockés dans MinIO, isolés par
+    entreprise / magasin.
+  - Entreprise suspendue ou annulée => accès bloqué (Company.is_active).
+
+
+--------------------------------------------------------------------------------
+10. DOCUMENTATION INTERNE (dossier _docs/)
+--------------------------------------------------------------------------------
+
+  06_ROLES_ET_PERMISSIONS.txt          rôles plateforme et tenant
+  08_SYSTEM_ PERMISSIONS_CENTRAL.txt   catalogue central des permissions,
+                                       isolation à deux niveaux
+  11_MODULE_PWA.txt                    PWA, première connexion, session locale
+  13_FONCTIONNALITE_HORS_LIGNE.txt     modules offline, file d'attente, stock,
+                                       POS
+
+
+--------------------------------------------------------------------------------
+11. COMMANDES UTILES
+--------------------------------------------------------------------------------
+
+  Démarrer :            docker compose up -d
+  Rebuild frontend :    docker compose build frontend
+  Frontend mode PWA :   docker compose -f docker-compose.yml
+                          -f docker-compose.pwa-test.yml up -d
+                          --no-deps --force-recreate frontend
+  Migrations :          docker compose exec backend python manage.py migrate
+  Superuser :           docker compose exec backend python manage.py createsuperuser
+  Tests backend :       docker compose exec backend python manage.py test
+  Frontend local :      http://localhost:5173
+  API :                 http://localhost:8000/api/
+  Swagger :             http://localhost:8000/api/docs/
+  MinIO console :       http://localhost:9001
+
+================================================================================

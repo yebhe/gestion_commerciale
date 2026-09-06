@@ -1,0 +1,10 @@
+# Override pour tester le PWA en mode production / offline
+# Le conteneur builde puis sert dist/ au demarrage (service worker actif).
+# Utilisation:
+#   1. docker compose -f docker-compose.yml -f docker-compose.pwa-test.yml up -d --no-deps frontend
+#   2. Ouvrir http://localhost et tester offline dans DevTools > Application > Service Workers
+#   Apres une modification du code : docker compose restart frontend (rebuild automatique)
+# Pour revenir au dev: docker compose up -d --no-deps frontend
+services:
+  frontend:
+    command: npm run build:serve

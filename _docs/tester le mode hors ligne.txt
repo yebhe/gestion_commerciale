@@ -1,0 +1,4 @@
+docker-compose exec frontend npm install
+docker-compose exec frontend npm run build
+
+docker-compose -f docker-compose.yml -f docker-compose.pwa-test.yml up -d --no-deps frontend

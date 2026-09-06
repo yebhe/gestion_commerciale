@@ -1,0 +1,304 @@
+===========================================================
+UI / UX DESIGN GUIDELINES
+PLATEFORME SAAS DE GESTION COMMERCIALE
+===========================================================
+
+VERSION : 1.0
+
+OBJECTIF
+
+Définir les règles de conception UI/UX de la plateforme.
+
+L'application est destinée principalement :
+
+- aux commerçants ;
+- aux boutiques ;
+- aux supermarchés ;
+- aux pharmacies ;
+- aux PME.
+
+Une partie importante des utilisateurs n'est pas
+forcément à l'aise avec l'informatique.
+
+L'objectif est donc de construire une interface :
+
+- simple ;
+- rapide ;
+- intuitive ;
+- professionnelle.
+
+===========================================================
+1. INSPIRATION DESIGN
+===========================================================
+
+Le design doit être inspiré :
+
+- des logiciels de gestion type Digisoft ;
+- des ERP modernes ;
+- des applications de caisse modernes.
+
+Ne pas créer une interface de type startup américaine
+trop minimaliste.
+
+L'application doit privilégier :
+
+- l'efficacité ;
+- la rapidité ;
+- la simplicité.
+
+===========================================================
+2. UTILISATEURS CIBLES
+===========================================================
+
+PROPRIÉTAIRE
+
+- ordinateur ;
+- tablette.
+
+MANAGER
+
+- ordinateur ;
+- tablette.
+
+CAISSIER
+
+- tablette ;
+- téléphone ;
+- ordinateur.
+
+GESTIONNAIRE STOCK
+
+- téléphone ;
+- tablette.
+
+===========================================================
+3. PRINCIPES DE DESIGN
+===========================================================
+
+Toujours privilégier :
+
+- peu de clics ;
+- gros boutons ;
+- grandes zones tactiles ;
+- peu de texte ;
+- navigation simple.
+
+L'utilisateur doit pouvoir apprendre le logiciel
+en quelques minutes.
+
+===========================================================
+4. TAILLES RECOMMANDÉES
+===========================================================
+
+Icônes :
+
+24 à 28 px minimum.
+
+Texte menu :
+
+15 à 16 px.
+
+Boutons :
+
+48 à 60 px minimum.
+
+Zones tactiles :
+
+minimum 44 px.
+
+Cartes KPI :
+
+grandes et lisibles.
+
+===========================================================
+5. COULEURS
+===========================================================
+
+Bleu :
+actions principales.
+
+Vert :
+paiements et succès.
+
+Orange :
+alertes.
+
+Rouge :
+erreurs.
+
+L'application ne doit pas utiliser trop de couleurs.
+
+===========================================================
+6. NAVIGATION PRINCIPALE
+===========================================================
+
+Sidebar Desktop :
+
+🏠 Tableau de bord
+🛒 Vente
+📦 Produits
+📊 Stock
+👥 Clients
+🚚 Fournisseurs
+📈 Rapports
+⚙ Paramètres
+
+Topbar :
+
+- logo entreprise ;
+- nom entreprise ;
+- recherche ;
+- notifications ;
+- profil utilisateur.
+
+===========================================================
+7. DASHBOARD PROPRIÉTAIRE
+===========================================================
+
+Cartes principales :
+
+- chiffre d'affaires ;
+- nombre de ventes ;
+- produits faibles ;
+- nombre de clients.
+
+Ajouter :
+
+- graphique ventes ;
+- produits populaires ;
+- dernières ventes ;
+- alertes stock.
+
+===========================================================
+8. DASHBOARD CAISSIER
+===========================================================
+
+Le plus simple possible.
+
+Afficher :
+
+- Nouvelle Vente ;
+- dernières ventes ;
+- ventes en attente ;
+- état de la connexion.
+
+Indicateur :
+
+🟢 Connecté
+
+🟠 Hors ligne
+
+===========================================================
+9. INTERFACE CAISSE (POS)
+===========================================================
+
+L'écran POS est la fonctionnalité la plus importante.
+
+Objectif :
+
+effectuer une vente en moins de 10 secondes.
+
+Composants :
+
+- recherche produit ;
+- scan code-barres ;
+- produits sous forme de cartes ;
+- panier visible ;
+- total très visible ;
+- bouton PAYER très grand.
+
+===========================================================
+10. GESTION PRODUITS
+===========================================================
+
+Privilégier :
+
+- cartes produits ;
+- photo produit ;
+- recherche rapide ;
+- filtres simples.
+
+Éviter les écrans trop chargés.
+
+===========================================================
+11. MOBILE ET TABLETTE
+===========================================================
+
+L'application doit être :
+
+- responsive ;
+- tactile ;
+- utilisable sur petits écrans.
+
+Prévoir une navigation simplifiée :
+
+🏠
+🛒
+📦
+📊
+☰
+
+===========================================================
+12. MODE HORS LIGNE
+===========================================================
+
+Toujours afficher :
+
+état de la connexion.
+
+Informer l'utilisateur :
+
+- nombre de ventes non synchronisées ;
+- synchronisation en cours ;
+- erreurs éventuelles.
+
+===========================================================
+13. ACCESSIBILITÉ
+===========================================================
+
+Utiliser :
+
+- textes lisibles ;
+- gros boutons ;
+- contrastes suffisants ;
+- icônes accompagnées de texte.
+
+Ne jamais utiliser uniquement des icônes.
+
+===========================================================
+14. TECHNOLOGIES UI
+===========================================================
+
+Frontend :
+
+- React
+- TypeScript
+- TailwindCSS
+- shadcn/ui
+- Lucide React
+- React Hook Form
+- Zod
+- Recharts
+
+===========================================================
+15. CONSIGNES POUR LES IA DE DESIGN
+===========================================================
+
+L'application doit ressembler à :
+
+- un logiciel de gestion professionnel ;
+- une application de caisse moderne ;
+- une application simple pour commerçants.
+
+Le design doit être :
+
+70 % simplicité
+30 % ERP professionnel
+
+L'expérience utilisateur doit être pensée
+pour des utilisateurs peu familiarisés
+avec l'informatique.
+
+===========================================================
+FIN DU DOCUMENT
+===========================================================

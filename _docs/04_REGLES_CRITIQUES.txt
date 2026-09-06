@@ -1,0 +1,65 @@
+RÈGLE 1
+
+Toutes les données métiers appartiennent à une entreprise.
+
+RÈGLE 2
+
+Ne jamais utiliser :
+
+Model.objects.all()
+
+Toujours filtrer :
+
+.filter(company=request.company)
+
+RÈGLE 3
+
+Ne jamais accepter company_id envoyé par le frontend.
+
+RÈGLE 4
+
+Toutes les opérations critiques utilisent :
+
+transaction.atomic()
+
+RÈGLE 5
+
+Les opérations de stock utilisent :
+
+select_for_update()
+
+RÈGLE 6
+
+Toutes les entités publiques possèdent un UUID.
+
+RÈGLE 7
+
+Toutes les actions importantes sont auditées.
+
+RÈGLE 8
+
+Les fichiers sont :
+
+Validation
+↓
+ClamAV
+↓
+MinIO
+
+RÈGLE 9
+
+Toutes les synchronisations offline sont idempotentes.
+
+RÈGLE 10
+
+Aucune entreprise ne doit accéder aux données d'une autre.
+
+RÈGLE 11
+
+Toutes les requêtes utilisent :
+
+request.company
+
+RÈGLE 12
+
+Toutes les APIs sont protégées par permissions.

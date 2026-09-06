@@ -1,0 +1,907 @@
+# SYSTÈME DE PERMISSIONS CENTRAL
+# SAAS DE GESTION COMMERCIALE MULTI-TENANT
+
+
+=========================================================
+1. PRINCIPE FONDAMENTAL
+=========================================================
+
+Toute l'application doit être construite autour :
+
+- des Permissions ;
+- du Scope (COMPANY ou STORE) ;
+- de l'isolation par UUID.
+
+Les permissions contrôlent :
+
+✓ l'accès aux modules
+✓ l'affichage des menus
+✓ les widgets du dashboard
+✓ les boutons d'action
+✓ les routes
+✓ les API
+✓ les opérations autorisées
+
+
+Les rôles ne sont PAS utilisés dans le code métier.
+
+Les rôles sont uniquement des groupes de permissions.
+
+
+❌ Incorrect :
+
+if role == "Manager"
+
+
+✅ Correct :
+
+hasPermission("sales.create")
+
+
+La règle de sécurité est :
+
+Permission
++
+Scope
++
+Company UUID
++
+Store UUID (si nécessaire)
+=
+Autorisation
+
+
+=========================================================
+2. ISOLATION MULTI-TENANT
+=========================================================
+
+L'application possède deux niveaux d'isolation.
+
+
+---------------------------------------------------------
+NIVEAU 1 : COMPANY
+---------------------------------------------------------
+
+Le scope COMPANY représente l'entreprise complète.
+
+Identifiant utilisé :
+
+company_uuid
+
+
+Exemples de rôles :
+
+- Owner
+- Company Admin
+- Accountant Global
+
+
+Accès :
+
+✓ tous les magasins de la compagnie
+✓ tous les employés
+✓ tous les rapports
+✓ tous les paramètres
+✓ toutes les données de la compagnie
+
+
+---------------------------------------------------------
+NIVEAU 2 : STORE
+---------------------------------------------------------
+
+Le scope STORE représente un magasin spécifique.
+
+Identifiant utilisé :
+
+store_uuid
+
+
+Exemples :
+
+- Manager
+- Cashier
+- Stock Manager
+- Store Accountant
+
+
+Accès :
+
+✓ uniquement son magasin
+✓ uniquement son stock
+✓ uniquement ses ventes
+✓ uniquement sa caisse
+✓ uniquement ses rapports
+
+
+Un utilisateur STORE ne peut jamais accéder à un autre magasin.
+
+
+=========================================================
+3. RÈGLE DES UUID ET DU SCOPE
+=========================================================
+
+Toutes les ressources doivent être liées à :
+
+company_uuid
+
+
+Les ressources liées à un magasin doivent contenir :
+
+store_uuid
+
+
+Exemple :
+
+products
+
+- uuid
+- company_uuid
+- name
+
+
+inventory
+
+- uuid
+- company_uuid
+- store_uuid
+- quantity
+
+
+sales
+
+- uuid
+- company_uuid
+- store_uuid
+
+
+---------------------------------------------------------
+RÈGLE OWNER
+---------------------------------------------------------
+
+Le Owner possède un scope :
+
+COMPANY
+
+
+Il peut utiliser toutes les permissions STORE.
+
+Cependant, chaque action STORE doit obligatoirement recevoir
+un store_uuid.
+
+
+Exemple :
+
+Owner :
+
+Permission :
+
+inventory.adjust
+
+
+Demande :
+
+company_uuid = ABC
+
+store_uuid = XYZ
+
+
+Vérification :
+
+XYZ appartient bien à ABC ?
+
+
+Oui :
+
+✓ Autorisé
+
+
+Non :
+
+✗ Refusé
+
+
+---------------------------------------------------------
+RÈGLE UTILISATEUR STORE
+---------------------------------------------------------
+
+Un utilisateur STORE possède un store_uuid attribué.
+
+
+Exemple :
+
+Manager :
+
+store_uuid = XYZ
+
+
+Demande :
+
+inventory.adjust
+
+store_uuid = ABC
+
+
+Résultat :
+
+✗ Refusé
+
+
+=========================================================
+4. FLUX D'AUTORISATION
+=========================================================
+
+Utilisateur
+
+↓
+
+Membership
+
+↓
+
+Company
+
+↓
+
+Store (optionnel)
+
+↓
+
+Role
+
+↓
+
+Permissions
+
+↓
+
+Scope
+
+↓
+
+Company UUID
+
+↓
+
+Store UUID
+
+↓
+
+Module accessible
+
+↓
+
+Action autorisée
+
+
+=========================================================
+5. PERMISSIONS SYSTÈME V1
+=========================================================
+
+
+---------------------------------------------------------
+COMPANY
+---------------------------------------------------------
+
+company.view
+
+company.update
+
+company.manage_settings
+
+
+---------------------------------------------------------
+STORES
+---------------------------------------------------------
+
+stores.view
+
+stores.create
+
+stores.update
+
+stores.delete
+
+stores.assign_users
+
+
+---------------------------------------------------------
+USERS
+---------------------------------------------------------
+
+users.view
+
+users.create
+
+users.update
+
+users.delete
+
+users.assign_roles
+
+
+---------------------------------------------------------
+ROLES
+---------------------------------------------------------
+
+roles.view
+
+roles.create
+
+roles.update
+
+roles.delete
+
+roles.assign_permissions
+
+
+---------------------------------------------------------
+PRODUCTS
+---------------------------------------------------------
+
+products.view
+
+products.create
+
+products.update
+
+products.delete
+
+products.change_price
+
+
+---------------------------------------------------------
+CATEGORIES
+---------------------------------------------------------
+
+categories.view
+
+categories.create
+
+categories.update
+
+categories.delete
+
+
+---------------------------------------------------------
+SUPPLIERS
+---------------------------------------------------------
+
+suppliers.view
+
+suppliers.create
+
+suppliers.update
+
+suppliers.delete
+
+
+---------------------------------------------------------
+CUSTOMERS
+---------------------------------------------------------
+
+customers.view
+
+customers.create
+
+customers.update
+
+customers.delete
+
+
+---------------------------------------------------------
+INVENTORY
+---------------------------------------------------------
+
+inventory.view
+
+inventory.adjust
+
+inventory.stock_entry
+
+inventory.stock_transfer
+
+inventory.view_history
+
+
+Scope obligatoire :
+
+STORE
+
+
+Nécessite :
+
+store_uuid
+
+
+---------------------------------------------------------
+SALES
+---------------------------------------------------------
+
+sales.view
+
+sales.create
+
+sales.cancel
+
+sales.refund
+
+
+Scope obligatoire :
+
+STORE
+
+
+Nécessite :
+
+store_uuid
+
+
+---------------------------------------------------------
+POS
+---------------------------------------------------------
+
+pos.access
+
+pos.open_session
+
+pos.close_session
+
+pos.print_receipt
+
+pos.reprint_receipt
+
+pos.apply_discount
+
+
+Scope obligatoire :
+
+STORE
+
+
+Nécessite :
+
+store_uuid
+
+
+---------------------------------------------------------
+REPORTS
+---------------------------------------------------------
+
+reports.view
+
+reports.sales
+
+reports.inventory
+
+reports.export
+
+
+Scope :
+
+COMPANY ou STORE
+
+
+Le résultat dépend du scope.
+
+
+---------------------------------------------------------
+PAYMENTS
+---------------------------------------------------------
+
+payments.view
+
+payments.create
+
+payments.refund
+
+
+Scope recommandé :
+
+STORE
+
+
+---------------------------------------------------------
+FILES
+---------------------------------------------------------
+
+files.view
+
+files.upload
+
+files.update
+
+files.delete
+
+
+files.update :
+
+Permet uniquement :
+
+- modifier le nom ;
+- modifier la description ;
+- modifier les métadonnées.
+
+
+Le contenu du fichier n'est jamais modifié.
+
+
+Règle :
+
+Toujours remplacer l'existant.
+
+
+Exemple :
+
+Ancien logo
+
+↓
+
+Upload nouveau logo
+
+↓
+
+Mise à jour company.logo_url
+
+
+---------------------------------------------------------
+NOTIFICATIONS
+---------------------------------------------------------
+
+notifications.view
+
+notifications.manage
+
+
+---------------------------------------------------------
+AUDIT
+---------------------------------------------------------
+
+audit.view
+
+
+=========================================================
+6. RÔLES SYSTÈME PAR DÉFAUT
+=========================================================
+
+
+---------------------------------------------------------
+OWNER
+---------------------------------------------------------
+
+Description :
+
+Propriétaire de la compagnie.
+
+Client qui possède l'entreprise dans le SaaS.
+
+
+Scope :
+
+COMPANY
+
+
+Permissions :
+
+Toutes les permissions système.
+
+
+Particularité :
+
+Les permissions nécessitant STORE doivent toujours être
+exécutées avec un store_uuid appartenant à sa compagnie.
+
+
+Accès :
+
+✓ tous les magasins
+✓ tous les utilisateurs
+✓ tous les rapports
+✓ tous les paramètres
+✓ tous les modules
+✓ tous les abonnements
+✓ toute la facturation
+
+
+Permissions exclusives :
+
+subscription.view
+
+subscription.update
+
+subscription.change_plan
+
+subscription.cancel
+
+
+billing.view
+
+billing.download_invoice
+
+billing.manage_payment_method
+
+
+company.transfer_ownership
+
+company.delete
+
+
+---------------------------------------------------------
+COMPANY ADMIN
+---------------------------------------------------------
+
+Description :
+
+Administrateur nommé par le Owner.
+
+
+Scope :
+
+COMPANY
+
+
+Permissions :
+
+company.*
+
+stores.*
+
+users.*
+
+roles.*
+
+reports.*
+
+settings.*
+
+
+Ne peut pas :
+
+✗ supprimer l'entreprise
+
+✗ transférer la propriété
+
+✗ gérer abonnement SaaS
+
+✗ gérer facturation SaaS
+
+
+---------------------------------------------------------
+MANAGER
+---------------------------------------------------------
+
+Description :
+
+Responsable d'un magasin.
+
+
+Scope :
+
+STORE
+
+
+Possède un :
+
+store_uuid
+
+
+Permissions :
+
+products.*
+
+categories.*
+
+suppliers.*
+
+customers.*
+
+inventory.*
+
+sales.*
+
+reports.view
+
+reports.sales
+
+reports.inventory
+
+
+Accès :
+
+✓ son magasin uniquement
+
+
+---------------------------------------------------------
+CASHIER
+---------------------------------------------------------
+
+Scope :
+
+STORE
+
+
+store_uuid obligatoire
+
+
+Permissions :
+
+pos.access
+
+pos.open_session
+
+pos.close_session
+
+sales.create
+
+products.view
+
+customers.view
+
+pos.print_receipt
+
+pos.reprint_receipt
+
+
+Accès :
+
+/pos uniquement
+
+
+---------------------------------------------------------
+STOCK MANAGER
+---------------------------------------------------------
+
+Scope :
+
+STORE
+
+
+Permissions :
+
+products.view
+
+products.update
+
+inventory.*
+
+suppliers.view
+
+suppliers.create
+
+suppliers.update
+
+
+---------------------------------------------------------
+ACCOUNTANT
+---------------------------------------------------------
+
+Scope :
+
+COMPANY ou STORE
+
+
+Permissions :
+
+payments.*
+
+reports.*
+
+sales.view
+
+
+=========================================================
+7. DASHBOARD
+=========================================================
+
+Route :
+
+/dashboard
+
+
+Un seul dashboard principal.
+
+
+Le dashboard est :
+
+✓ unique
+✓ modulaire
+✓ dynamique
+
+
+Affichage basé uniquement sur :
+
+- permissions ;
+- scope ;
+- company_uuid ;
+- store_uuid.
+
+
+Un utilisateur ne voit jamais :
+
+✗ un menu
+
+✗ un module
+
+✗ un bouton
+
+✗ une statistique
+
+
+sans permission.
+
+
+=========================================================
+8. MODULE POS
+=========================================================
+
+Route :
+
+/pos
+
+
+Réservé aux utilisateurs ayant :
+
+
+pos.access
+
+sales.create
+
+pos.print_receipt
+
+
+Le POS doit être :
+
+✓ rapide
+
+✓ tactile
+
+✓ mobile
+
+✓ PWA
+
+✓ offline
+
+
+=========================================================
+9. OBJECTIF FINAL
+=========================================================
+
+Permission
+
+↓
+
+Scope
+
+↓
+
+Company UUID
+
+↓
+
+Store UUID
+
+↓
+
+Module affiché
+
+↓
+
+Action autorisée
+
+
+Créer un nouveau rôle ne doit jamais nécessiter
+une modification du code.
+
+
+Il suffit de :
+
+1. créer un rôle ;
+
+2. attribuer des permissions ;
+
+3. définir son scope :
+
+COMPANY
+
+ou
+
+STORE.

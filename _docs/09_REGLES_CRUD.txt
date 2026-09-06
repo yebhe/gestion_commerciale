@@ -1,0 +1,422 @@
+# RÈGLES CRUD AVEC SCOPE STORE, FORMULAIRES ET NOTIFICATIONS UI
+
+
+=========================================================
+RÈGLE DES OPÉRATIONS NÉCESSITANT UN SCOPE STORE
+=========================================================
+
+Certaines opérations métier nécessitent obligatoirement
+un magasin cible.
+
+Exemples :
+
+- ventes ;
+- caisse POS ;
+- stock ;
+- inventaire ;
+- mouvements de produits ;
+- rapports magasin ;
+- paiements liés aux ventes.
+
+
+Avant toute opération CRUD nécessitant un scope STORE :
+
+L'utilisateur doit sélectionner le magasin concerné.
+
+
+Flux obligatoire :
+
+
+Utilisateur
+
+↓
+
+Sélection du magasin
+
+↓
+
+Vérification store_uuid
+
+↓
+
+Vérification company_uuid
+
+↓
+
+Vérification permission
+
+↓
+
+Validation du formulaire
+
+↓
+
+Exécution CRUD
+
+
+=========================================================
+RÈGLE STORE_UUID
+=========================================================
+
+Toute opération STORE doit contenir :
+
+store_uuid
+
+
+Le backend vérifie :
+
+1. Le store_uuid existe.
+2. Le store_uuid appartient au company_uuid actuel.
+3. L'utilisateur possède l'autorisation sur ce magasin.
+
+
+Si la vérification échoue :
+
+
+403 Forbidden
+
+
+=========================================================
+CAS OWNER
+=========================================================
+
+Le Owner possède un scope COMPANY.
+
+
+Il peut sélectionner n'importe quel magasin
+appartenant à son entreprise.
+
+
+Exemple :
+
+Company :
+
+Boutique Mamadou
+
+
+Magasins :
+
+- Conakry
+- Cosa
+- Bambeto
+
+
+Le Owner sélectionne :
+
+store_uuid = Conakry
+
+
+Puis exécute :
+
+inventory.adjust
+
+
+Résultat :
+
+Autorisé.
+
+
+=========================================================
+CAS UTILISATEUR STORE
+=========================================================
+
+Un utilisateur avec scope STORE possède un magasin
+assigné.
+
+
+Exemple :
+
+
+Manager
+
+store_uuid autorisé :
+
+Cosa
+
+
+Il sélectionne :
+
+Conakry
+
+
+Résultat :
+
+Refusé.
+
+
+Un utilisateur STORE ne peut jamais changer
+de magasin hors de son périmètre.
+
+
+=========================================================
+FORMULAIRES CRUD
+=========================================================
+
+Les formulaires doivent être adaptés au contexte métier.
+
+
+Deux types de formulaires :
+
+
+1. FORMULAIRE SIMPLE
+
+Pour les CRUD simples :
+
+- catégories ;
+- clients ;
+- fournisseurs.
+
+
+Un seul écran.
+
+
+Exemple :
+
+Nom
+
+Téléphone
+
+Email
+
+Adresse
+
+
+---------------------------------------------------------
+
+
+2. FORMULAIRE MULTI-ÉTAPES
+
+Pour les CRUD complexes :
+
+- entreprise ;
+- magasin ;
+- employé ;
+- produit ;
+- configuration.
+
+
+Chaque étape possède :
+
+- ses champs ;
+- ses validations ;
+- son état ;
+- ses messages d'erreur.
+
+
+Exemple produit :
+
+
+Étape 1 :
+
+Informations générales
+
+
+Étape 2 :
+
+Prix
+
+
+Étape 3 :
+
+Stock
+
+
+Étape 4 :
+
+Image
+
+
+Étape 5 :
+
+Confirmation
+
+
+=========================================================
+VALIDATION FRONTEND
+=========================================================
+
+La validation frontend doit être personnalisée.
+
+
+Interdit :
+
+Messages génériques du navigateur :
+
+
+"Ce champ est obligatoire"
+
+
+"Please fill out this field"
+
+
+"Required"
+
+
+Ces messages ne doivent jamais apparaître.
+
+
+=========================================================
+MESSAGES DE VALIDATION PERSONNALISÉS
+=========================================================
+
+
+Les messages doivent être compréhensibles
+pour l'utilisateur.
+
+
+Exemples :
+
+
+Champ nom vide :
+
+
+❌ Nom obligatoire
+
+
+✅
+
+"Veuillez saisir le nom du produit."
+
+
+--------------------------------
+
+
+Prix invalide :
+
+
+❌ Invalid value
+
+
+✅
+
+"Le prix doit être supérieur à zéro."
+
+
+--------------------------------
+
+
+Stock invalide :
+
+
+❌ Required
+
+
+✅
+
+"Veuillez indiquer la quantité disponible."
+
+
+--------------------------------
+
+
+Magasin non sélectionné :
+
+
+❌ Required
+
+
+✅
+
+"Veuillez sélectionner un magasin avant de continuer."
+
+
+=========================================================
+VALIDATION BACKEND
+=========================================================
+
+La validation frontend améliore l'expérience.
+
+
+La validation backend reste obligatoire.
+
+
+Le backend vérifie toujours :
+
+- format des données ;
+- permissions ;
+- scope ;
+- company_uuid ;
+- store_uuid ;
+- règles métier.
+
+
+Le frontend ne remplace jamais la sécurité backend.
+
+
+=========================================================
+POP-UPS ET NOTIFICATIONS
+=========================================================
+
+L'application doit utiliser son propre système
+de notifications.
+
+
+Interdit :
+
+- alert() navigateur ;
+- pop-up Windows ;
+- messages natifs du système.
+
+
+Toutes les notifications doivent respecter
+le design de l'application.
+
+
+Types :
+
+SUCCESS
+
+Exemple :
+
+"Produit créé avec succès."
+
+
+ERROR
+
+Exemple :
+
+"Impossible de modifier ce produit."
+
+
+WARNING
+
+Exemple :
+
+"Cette action modifiera le stock actuel."
+
+
+INFO
+
+Exemple :
+
+"Synchronisation en cours."
+
+
+=========================================================
+RÈGLE UX FINALE
+=========================================================
+
+Chaque action CRUD doit fournir un retour clair.
+
+
+Après une action réussie :
+
+Afficher :
+
+✓ confirmation personnalisée
+
+
+Après une erreur :
+
+Afficher :
+
+✓ message compréhensible
+
+✓ action corrective possible
+
+
+Jamais afficher :
+
+- erreurs techniques ;
+- stack trace ;
+- messages backend bruts.

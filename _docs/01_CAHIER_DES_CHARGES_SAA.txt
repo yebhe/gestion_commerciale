@@ -1,0 +1,73 @@
+PLATEFORME SAAS DE GESTION COMMERCIALE MULTI-TENANT
+
+OBJECTIF
+Créer une plateforme SaaS de gestion de magasins destinée
+au marché guinéen et africain.
+
+La plateforme doit permettre à plusieurs entreprises
+d'utiliser la même application tout en gardant leurs
+données totalement isolées.
+
+UTILISATEURS CIBLES
+
+- boutiques
+- supermarchés
+- pharmacies
+- grossistes
+- quincailleries
+- distributeurs
+
+FONCTIONNALITÉS PRINCIPALES
+
+- authentification
+- gestion entreprises
+- gestion magasins
+- gestion employés
+- gestion rôles
+- gestion permissions
+- gestion produits
+- gestion catégories
+- gestion fournisseurs
+- gestion clients
+- gestion stock
+- caisse POS
+- impression reçus
+- rapports
+- notifications
+- abonnements SaaS
+- Mobile Money
+- PWA installable
+- mode hors ligne
+
+PERSONNALISATION PAR ENTREPRISE
+
+- logo
+- couleurs
+- informations société
+- informations reçus
+- activation/désactivation modules
+
+OBJECTIFS NON FONCTIONNELS
+
+- sécurisé
+- scalable
+- multi-tenant
+- rapide
+- maintenable
+- résilient
+- prêt pour plusieurs milliers d'entreprises
+
+ORDRE DE DÉVELOPPEMENT
+
+1. Authentification
+2. Multi-tenant
+3. Permissions
+4. Produits
+5. Stock
+6. POS
+7. Fichiers
+8. PWA
+9. Rapports
+10. Mobile Money
+11. Abonnements
+12. Production
