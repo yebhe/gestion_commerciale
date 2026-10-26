@@ -161,6 +161,36 @@ export const productsAPI = {
     api.delete(`/products/${uuid}/`),
 };
 
+// Variantes et lots d'un produit (_docs/15, étape 4.4) — routes
+// imbriquées /products/{uuid}/variants/ et /products/{uuid}/lots/.
+export const variantsAPI = {
+  list: (productUuid) =>
+    api.get(`/products/${productUuid}/variants/`),
+
+  create: (productUuid, data) =>
+    api.post(`/products/${productUuid}/variants/`, data),
+
+  update: (productUuid, uuid, data) =>
+    api.patch(`/products/${productUuid}/variants/${uuid}/`, data),
+
+  remove: (productUuid, uuid) =>
+    api.delete(`/products/${productUuid}/variants/${uuid}/`),
+};
+
+export const lotsAPI = {
+  list: (productUuid) =>
+    api.get(`/products/${productUuid}/lots/`),
+
+  create: (productUuid, data) =>
+    api.post(`/products/${productUuid}/lots/`, data),
+
+  update: (productUuid, uuid, data) =>
+    api.patch(`/products/${productUuid}/lots/${uuid}/`, data),
+
+  remove: (productUuid, uuid) =>
+    api.delete(`/products/${productUuid}/lots/${uuid}/`),
+};
+
 export const customersAPI = {
   list: (page, search = '') =>
     api.get('/customers/', { params: { page: page || 1, ...(search && { search }) } }),
@@ -224,6 +254,80 @@ export const inventoryAPI = {
 
   remove: (uuid) =>
     api.delete(`/inventory/${uuid}/`),
+
+  stock: (params = {}) =>
+    api.get('/inventory/stock/', { params }),
+};
+
+export const transfersAPI = {
+  list: (page, params = {}) =>
+    api.get('/inventory/transfers/', { params: { page: page || 1, ...params } }),
+
+  create: (data) =>
+    api.post('/inventory/transfers/', data),
+
+  remove: (uuid) =>
+    api.delete(`/inventory/transfers/${uuid}/`),
+
+  request: (uuid) =>
+    api.post(`/inventory/transfers/${uuid}/request/`),
+
+  validate: (uuid) =>
+    api.post(`/inventory/transfers/${uuid}/validate/`),
+
+  reject: (uuid, reason = '') =>
+    api.post(`/inventory/transfers/${uuid}/reject/`, { reason }),
+
+  prepare: (uuid) =>
+    api.post(`/inventory/transfers/${uuid}/prepare/`),
+
+  ship: (uuid) =>
+    api.post(`/inventory/transfers/${uuid}/ship/`),
+
+  receive: (uuid, quantities) =>
+    api.post(`/inventory/transfers/${uuid}/receive/`, quantities ? { quantities } : {}),
+
+  cancel: (uuid) =>
+    api.post(`/inventory/transfers/${uuid}/cancel/`),
+};
+
+export const inventorySessionsAPI = {
+  list: (page, params = {}) =>
+    api.get('/inventory/sessions/', { params: { page: page || 1, ...params } }),
+
+  get: (uuid) =>
+    api.get(`/inventory/sessions/${uuid}/`),
+
+  create: (data) =>
+    api.post('/inventory/sessions/', data),
+
+  count: (uuid, line, countedQuantity) =>
+    api.post(`/inventory/sessions/${uuid}/count/`, {
+      line, counted_quantity: countedQuantity,
+    }),
+
+  validate: (uuid) =>
+    api.post(`/inventory/sessions/${uuid}/validate/`),
+
+  cancel: (uuid) =>
+    api.post(`/inventory/sessions/${uuid}/cancel/`),
+
+  remove: (uuid) =>
+    api.delete(`/inventory/sessions/${uuid}/`),
+};
+
+export const warehousesAPI = {
+  list: (page, search = '', store = '') =>
+    api.get('/inventory/warehouses/', { params: { page: page || 1, ...(search && { search }), ...(store && { store }) } }),
+
+  create: (data) =>
+    api.post('/inventory/warehouses/', data),
+
+  update: (uuid, data) =>
+    api.patch(`/inventory/warehouses/${uuid}/`, data),
+
+  remove: (uuid) =>
+    api.delete(`/inventory/warehouses/${uuid}/`),
 };
 
 export const filesAPI = {

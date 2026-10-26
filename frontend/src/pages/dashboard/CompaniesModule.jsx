@@ -96,7 +96,7 @@ const CompaniesModule = () => {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg border border-gray-200 p-4 mb-4 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-surface rounded-lg border border-border p-4 mb-4 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -104,46 +104,46 @@ const CompaniesModule = () => {
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Nom de l'entreprise</label>
               <input
                 name="company_name" required value={form.company_name} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prénom du propriétaire</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Prénom du propriétaire</label>
               <input
                 name="first_name" required value={form.first_name} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nom du propriétaire</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Nom du propriétaire</label>
               <input
                 name="last_name" required value={form.last_name} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email du propriétaire</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Email du propriétaire</label>
               <input
                 type="email" name="email" required value={form.email} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Mot de passe</label>
               <input
                 type="password" name="password" required minLength={6} value={form.password} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Confirmer le mot de passe</label>
               <input
                 type="password" name="password_confirm" required value={form.password_confirm} onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-[15px] focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-4 py-2.5 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
           </div>

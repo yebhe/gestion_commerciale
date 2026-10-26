@@ -24,7 +24,7 @@
 import Dexie from 'dexie';
 
 const DB_NAME = 'yebhe-pwa';
-const DB_VERSION = 4;
+const DB_VERSION = 6;
 
 const db = new Dexie(DB_NAME);
 
@@ -86,6 +86,32 @@ db.version(DB_VERSION).stores({
   preferences: 'key, company_uuid, user_uuid, device_uuid',
 });
 
+// v5 : entrepôts (_docs/15, étape 1.9)
+db.version(DB_VERSION).stores({
+  products:    'uuid, company_uuid, store_uuid, user_uuid, device_uuid, name, updated_at',
+  categories:  'uuid, company_uuid, store_uuid, user_uuid, device_uuid, name, updated_at',
+  customers:   'uuid, company_uuid, user_uuid, device_uuid, name, updated_at',
+  suppliers:   'uuid, company_uuid, user_uuid, device_uuid, name, updated_at',
+  stores:      'uuid, company_uuid, user_uuid, device_uuid, name, updated_at',
+  warehouses:  'uuid, company_uuid, store_uuid, user_uuid, device_uuid, name, updated_at',
+  settings:    'key, company_uuid, user_uuid, device_uuid, updated_at',
+  syncQueue:   '++id, operation_uuid, company_uuid, store_uuid, warehouse_uuid, user_uuid, device_uuid, entity_type, entity_uuid, operation_type, status, created_at, synced_at',
+  syncLog:     '++id, company_uuid, store_uuid, user_uuid, device_uuid, entity_type, operation_type, status, message, created_at',
+  posSessions: 'uuid, company_uuid, store_uuid, user_uuid, device_uuid, status, created_at',
+  sales:       'uuid, company_uuid, store_uuid, warehouse_uuid, user_uuid, device_uuid, status, created_at',
+  stockMovements: 'uuid, company_uuid, store_uuid, warehouse_uuid, user_uuid, device_uuid, product_uuid, movement_type, status, created_at',
+  preferences: 'key, company_uuid, user_uuid, device_uuid',
+});
+
+// v6 : variantes et lots (_docs/15, étape 4.6) — tables de cache +
+// variant_uuid / lot_uuid sur les mouvements et les ventes.
+db.version(6).stores({
+  variants:    'uuid, company_uuid, product_uuid, user_uuid, device_uuid, updated_at',
+  lots:        'uuid, company_uuid, product_uuid, variant_uuid, user_uuid, device_uuid, number, updated_at',
+  sales:       'uuid, company_uuid, store_uuid, warehouse_uuid, user_uuid, device_uuid, status, created_at',
+  stockMovements: 'uuid, company_uuid, store_uuid, warehouse_uuid, user_uuid, device_uuid, product_uuid, variant_uuid, lot_uuid, movement_type, status, created_at',
+});
+
 export default db;
 
 /**
@@ -97,6 +123,9 @@ export const ENTITY_TO_TABLE = {
   category: 'categories',
   customer: 'customers',
   supplier: 'suppliers',
+  warehouse: 'warehouses',
+  variant: 'variants',
+  lot: 'lots',
   sale: 'sales',
   posSession: 'posSessions',
   stockMovement: 'stockMovements',
@@ -112,7 +141,8 @@ export const ENTITY_TO_TABLE = {
 export async function clearCompanyData(companyUuid) {
   if (!companyUuid) return;
   const cacheTables = ['products', 'categories', 'customers', 'suppliers',
-                       'stores', 'settings', 'syncLog', 'preferences', 'stockMovements', 'sales'];
+                       'stores', 'warehouses', 'variants', 'lots',
+                       'settings', 'syncLog', 'preferences', 'stockMovements', 'sales'];
   for (const table of cacheTables) {
     await db.table(table).where('company_uuid').equals(companyUuid).delete();
   }
@@ -130,7 +160,8 @@ export async function clearCompanyData(companyUuid) {
  */
 export async function clearCacheData() {
   const cacheTables = ['products', 'categories', 'customers', 'suppliers',
-                       'stores', 'settings', 'syncLog', 'preferences', 'stockMovements', 'sales'];
+                       'stores', 'warehouses', 'variants', 'lots',
+                       'settings', 'syncLog', 'preferences', 'stockMovements', 'sales'];
   await Promise.all(
     cacheTables.map((table) => db.table(table).clear())
   );

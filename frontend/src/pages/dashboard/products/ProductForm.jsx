@@ -2,6 +2,7 @@ import {
   X, ChevronRight, ChevronLeft,
 } from 'lucide-react';
 import { mediaUrl } from '../../../lib/api';
+import VariantsLotsPanel from './VariantsLotsPanel';
 import {
   PRODUCT_STEPS, inputClass, labelClass, btnPrimary, btnSecondary,
 } from './constants';
@@ -162,6 +163,12 @@ const ProductForm = ({
           )}
         </div>
       </div>
+    )}
+
+    {/* Variantes / lots : uniquement sur un produit existant (routes
+        imbriquées /products/{uuid}/variants|lots — étape 4.5). */}
+    {editingProduct && (
+      <VariantsLotsPanel productUuid={editingProduct.uuid} />
     )}
   </div>
 );

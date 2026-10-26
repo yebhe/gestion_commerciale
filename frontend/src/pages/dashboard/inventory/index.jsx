@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ArrowLeft, PackagePlus, ArrowLeftRight, History, SlidersHorizontal, Boxes } from 'lucide-react';
+import { ArrowLeft, PackagePlus, ArrowLeftRight, History, SlidersHorizontal, Boxes, ClipboardList } from 'lucide-react';
 import api, { inventoryAPI, productsAPI, storesAPI } from '../../../lib/api';
 import db from '../../../pwa/db';
 import networkManager from '../../../pwa/networkManager';
-import { loadStoresWithCache } from '../../../pwa/preloadCache';
+import { loadStoresWithCache, loadWarehousesWithCache } from '../../../pwa/preloadCache';
 import { usePWA } from '../../../pwa/PWAContext';
 import { useOfflineMutation } from '../../../pwa/useOfflineMutation';
 import { useSyncRefresh } from '../../../pwa';
@@ -11,18 +11,22 @@ import { applyPendingStock } from '../../../pwa/applyPendingStock';
 import { useAuth } from '../../../contexts/AuthContext';
 import AlertDialog from '../../../components/ui/AlertDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
-import { EMPTY_ENTRY, EMPTY_ADJUST, EMPTY_TRANSFER, btnPrimary } from './constants';
+import { EMPTY_ENTRY, EMPTY_ADJUST, EMPTY_TRANSFER, btnPrimary, lineStock } from './constants';
 import StoreSelector from './StoreSelector';
+import WarehouseSelector from './WarehouseSelector';
 import StockEntryForm from './StockEntryForm';
 import StockAdjustForm from './StockAdjustForm';
 import StockTransferForm from './StockTransferForm';
 import StockMovementList from './StockMovementList';
 import StockAvailabilityView from './StockAvailabilityView';
+import TransferList from './TransferList';
+import InventorySessionsView from './InventorySessionsView';
 
 const TABS = [
   { key: 'stock-availability', label: 'Stock disponible', icon: Boxes },
   { key: 'stock-entry', label: 'Entrée de stock', icon: PackagePlus },
   { key: 'stock-adjust', label: 'Ajustement', icon: SlidersHorizontal },
+  { key: 'stock-sessions', label: 'Inventaires', icon: ClipboardList },
   { key: 'stock-transfer', label: 'Transfert', icon: ArrowLeftRight },
   { key: 'stock-history', label: 'Historique', icon: History },
 ];
@@ -40,6 +44,8 @@ const InventoryModule = ({ sub, onBack }) => {
     !isCompanyScope && assignedStore ? assignedStore.uuid : ''
   );
   const [storeError, setStoreError] = useState('');
+  const [warehouses, setWarehouses] = useState([]);
+  const [selectedWarehouseUuid, setSelectedWarehouseUuid] = useState('');
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +60,7 @@ const InventoryModule = ({ sub, onBack }) => {
   const [adjustForm, setAdjustForm] = useState(EMPTY_ADJUST);
   const [transferForm, setTransferForm] = useState(EMPTY_TRANSFER);
   const [error, setError] = useState('');
+  const [inTransit, setInTransit] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState(null);
   const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
@@ -69,6 +76,7 @@ const InventoryModule = ({ sub, onBack }) => {
   const canAdjust = hasPermission('inventory.adjust');
   const canTransfer = hasPermission('inventory.stock_transfer');
   const canViewHistory = hasPermission('inventory.view_history');
+  const canValidateSession = hasPermission('inventory.inventory_validate');
   const canViewAvailability = canStockEntry || canAdjust || canTransfer || canViewHistory || true;
 
   const fromStoreUuid = isCompanyScope && selectedStoreUuid ? selectedStoreUuid : (!isCompanyScope && assignedStore ? assignedStore.uuid : '');
@@ -211,7 +219,22 @@ const InventoryModule = ({ sub, onBack }) => {
     finally { setLoading(false); }
   }, [isCompanyScope, selectedStoreUuid, assignedStore, searchDebounced, tab, online, user]);
 
-  useSyncRefresh(() => { loadProducts(); loadMovements(); });
+  // Quantités en transit (3.9) : expédiées vers le magasin/entrepôt
+  // sélectionné mais pas encore reçues. Nécessite le réseau.
+  const loadTransit = useCallback(async () => {
+    if (!networkManager.getState().online) { setInTransit([]); return; }
+    try {
+      const params = {};
+      if (fromStoreUuid) params.store = fromStoreUuid;
+      if (selectedWarehouseUuid) params.warehouse = selectedWarehouseUuid;
+      const res = await inventoryAPI.stock(params);
+      setInTransit(res.data?.in_transit || []);
+    } catch {
+      setInTransit([]);
+    }
+  }, [fromStoreUuid, selectedWarehouseUuid]);
+
+  useSyncRefresh(() => { loadProducts(); loadMovements(); loadTransit(); });
 
   useEffect(() => {
     const t = setTimeout(() => { setSearchDebounced(search); setPage(1); }, 400);
@@ -220,6 +243,20 @@ const InventoryModule = ({ sub, onBack }) => {
 
   useEffect(() => { if (isCompanyScope) loadStores(); }, []);
   useEffect(() => { loadProducts(); }, [selectedStoreUuid]);
+
+  // Charge les entrepôts du magasin sélectionné et pré-sélectionne
+  // l'entrepôt par défaut (mode simple : un seul entrepôt -> pas de
+  // sélecteur affiché, mais l'uuid est quand même propagé).
+  useEffect(() => {
+    const storeUuid = isCompanyScope ? selectedStoreUuid : assignedStore?.uuid;
+    if (!storeUuid) { setWarehouses([]); setSelectedWarehouseUuid(''); return; }
+    loadWarehousesWithCache(storeUuid).then((list) => {
+      const active = (list || []).filter((w) => w.is_active !== false);
+      setWarehouses(active);
+      const def = active.find((w) => w.is_default) || active[0];
+      setSelectedWarehouseUuid(def?.uuid || '');
+    }).catch(() => { setWarehouses([]); setSelectedWarehouseUuid(''); });
+  }, [isCompanyScope, selectedStoreUuid, assignedStore]);
   useEffect(() => { loadMovements(); }, [loadMovements]);
   useEffect(() => { setTab(sub || 'stock-entry'); setShowForm(false); }, [sub]);
 
@@ -255,13 +292,16 @@ const InventoryModule = ({ sub, onBack }) => {
     try {
       const payload = {
         product: entryForm.product,
+        variant: entryForm.variant || undefined,
         quantity: parseInt(entryForm.quantity),
         type: 'in',
         store: selectedStoreUuid || undefined,
+        warehouse: entryForm.warehouse || selectedWarehouseUuid || undefined,
       };
       await createStockMovement(payload, {
         company_uuid: localStorage.getItem('current_company_uuid'),
         store_uuid: selectedStoreUuid || assignedStore?.uuid || null,
+        warehouse_uuid: payload.warehouse || null,
         user_uuid: user?.uuid,
       });
       showAlert('success', 'Entrée enregistrée', 'Le stock a été augmenté.');
@@ -283,13 +323,16 @@ const InventoryModule = ({ sub, onBack }) => {
     try {
       const payload = {
         product: adjustForm.product,
+        variant: adjustForm.variant || undefined,
         new_quantity: parseInt(adjustForm.quantity),
         type: 'adjustment',
         store: selectedStoreUuid || undefined,
+        warehouse: adjustForm.warehouse || selectedWarehouseUuid || undefined,
       };
       await createStockMovement(payload, {
         company_uuid: localStorage.getItem('current_company_uuid'),
         store_uuid: selectedStoreUuid || assignedStore?.uuid || null,
+        warehouse_uuid: payload.warehouse || null,
         user_uuid: user?.uuid,
       });
       showAlert('success', 'Ajustement enregistré', 'Le stock a été ajusté.');
@@ -300,20 +343,23 @@ const InventoryModule = ({ sub, onBack }) => {
     } finally { setSubmitting(false); }
   };
 
-  const handleTransferSubmit = async () => {
+  const handleTransferSubmit = async (immediate) => {
     const fromStore = fromStoreUuid || transferForm.from_store;
     if (!transferForm.product || !transferForm.quantity || !fromStore || !transferForm.to_store) {
       setError('Veuillez remplir tous les champs.'); return;
-    }
-    if (fromStore === transferForm.to_store) {
-      setError('Les magasins source et destination doivent être différents.'); return;
     }
     const transferQty = parseInt(transferForm.quantity);
     if (transferQty <= 0) {
       setError('La quantité à transférer doit être supérieure à 0.'); return;
     }
     const product = products.find((p) => p.uuid === transferForm.product);
-    const sourceStock = product?.stock_by_store?.find((s) => s.store?.uuid === fromStore)?.quantity ?? 0;
+    const sourceStock = product
+      ? lineStock(product, {
+          storeUuid: fromStore,
+          warehouseUuid: transferForm.from_warehouse || selectedWarehouseUuid,
+          variantUuid: transferForm.variant,
+        })
+      : 0;
     if (transferQty > sourceStock) {
       setError(`Stock insuffisant dans le magasin source : ${sourceStock} disponible(s), ${transferQty} demandé(s).`);
       return;
@@ -321,17 +367,32 @@ const InventoryModule = ({ sub, onBack }) => {
     setSubmitting(true);
     try {
       const payload = {
-        product: transferForm.product,
-        quantity: parseInt(transferForm.quantity),
         from_store: fromStore,
         to_store: transferForm.to_store,
+        from_warehouse: transferForm.from_warehouse || selectedWarehouseUuid || undefined,
+        to_warehouse: transferForm.to_warehouse || undefined,
+        immediate,
+        items: [{
+          product: transferForm.product,
+          variant: transferForm.variant || undefined,
+          quantity_requested: transferQty,
+        }],
       };
-      await createTransfer(payload, {
-        company_uuid: localStorage.getItem('current_company_uuid'),
-        store_uuid: selectedStoreUuid || assignedStore?.uuid || null,
-        user_uuid: user?.uuid,
-      });
-      showAlert('success', 'Transfert enregistré', 'Le stock a été transféré entre les magasins.');
+      if (immediate) {
+        // Mode simple / hors ligne : mutation offline-compatible.
+        await createTransfer(payload, {
+          company_uuid: localStorage.getItem('current_company_uuid'),
+          store_uuid: selectedStoreUuid || assignedStore?.uuid || null,
+          warehouse_uuid: payload.from_warehouse || null,
+          user_uuid: user?.uuid,
+        });
+      } else {
+        // Workflow : exige le réseau (3.10).
+        await transfersAPI.create(payload);
+      }
+      showAlert('success',
+        immediate ? 'Transfert effectué' : 'Demande créée',
+        immediate ? 'Le stock a été transféré.' : 'La demande de transfert attend validation.');
       closeForm(); await loadMovements(); await loadProducts();
     } catch (err) {
       const msg = err.response?.data ? Object.values(err.response.data).flat().join(' ') : 'Erreur lors du transfert.';
@@ -366,6 +427,7 @@ const InventoryModule = ({ sub, onBack }) => {
     if (t.key === 'stock-availability') return canViewAvailability;
     if (t.key === 'stock-entry') return canStockEntry || canAdjust;
     if (t.key === 'stock-adjust') return canAdjust;
+    if (t.key === 'stock-sessions') return canAdjust || canValidateSession;
     if (t.key === 'stock-transfer') return canTransfer;
     if (t.key === 'stock-history') return canViewHistory;
     return true;
@@ -399,12 +461,32 @@ const InventoryModule = ({ sub, onBack }) => {
           onChange={setSelectedStoreUuid} error={storeError} />
       )}
 
+      <WarehouseSelector
+        warehouses={warehouses}
+        selectedWarehouseUuid={selectedWarehouseUuid}
+        onChange={setSelectedWarehouseUuid}
+      />
+
       {tab === 'stock-availability' && (
         <StockAvailabilityView
           products={products}
           storeUuid={fromStoreUuid}
           storeName={selectedStoreName}
+          warehouseUuid={selectedWarehouseUuid || null}
+          warehouseName={warehouses.find((w) => w.uuid === selectedWarehouseUuid)?.name || ''}
+          warehouses={warehouses}
+          inTransit={inTransit}
           loading={loading}
+        />
+      )}
+
+      {tab === 'stock-sessions' && (
+        <InventorySessionsView
+          storeUuid={fromStoreUuid}
+          warehouses={warehouses}
+          canAdjust={canAdjust}
+          canValidate={canValidateSession}
+          online={online}
         />
       )}
 
@@ -414,6 +496,7 @@ const InventoryModule = ({ sub, onBack }) => {
             <StockEntryForm
               form={entryForm} products={products} error={error} submitting={submitting}
               storeUuid={isCompanyScope && selectedStoreUuid ? selectedStoreUuid : (!isCompanyScope && assignedStore ? assignedStore.uuid : '')}
+              warehouseUuid={entryForm.warehouse || selectedWarehouseUuid}
               onChange={(e) => setEntryForm({ ...entryForm, [e.target.name]: e.target.value })}
               onSubmit={handleEntrySubmit} onClose={closeForm}
             />
@@ -449,6 +532,7 @@ const InventoryModule = ({ sub, onBack }) => {
             <StockAdjustForm
               form={adjustForm} products={products} error={error} submitting={submitting}
               storeUuid={isCompanyScope && selectedStoreUuid ? selectedStoreUuid : (!isCompanyScope && assignedStore ? assignedStore.uuid : '')}
+              warehouseUuid={adjustForm.warehouse || selectedWarehouseUuid}
               onChange={(e) => setAdjustForm({ ...adjustForm, [e.target.name]: e.target.value })}
               onSubmit={handleAdjustSubmit} onClose={closeForm}
             />
@@ -484,6 +568,7 @@ const InventoryModule = ({ sub, onBack }) => {
             <StockTransferForm
               form={transferForm} products={products} stores={stores}
               fromStoreUuid={isCompanyScope && selectedStoreUuid ? selectedStoreUuid : (!isCompanyScope && assignedStore ? assignedStore.uuid : '')}
+              warehouseUuid={transferForm.from_warehouse || selectedWarehouseUuid}
               error={error} submitting={submitting}
               onChange={(e) => setTransferForm({ ...transferForm, [e.target.name]: e.target.value })}
               onSubmit={handleTransferSubmit} onClose={closeForm}
@@ -502,13 +587,9 @@ const InventoryModule = ({ sub, onBack }) => {
             </div>
           )}
           {!showForm && (
-            <StockMovementList
-              movements={displayMovements}
-              loading={loading} search={search} page={page}
-              count={count} next={hasNext} prev={hasPrev}
-              onSearchChange={setSearch} onPageChange={setPage}
-              onDelete={canAdjust ? handleDeleteMovement : undefined}
-              canEdit={canAdjust}
+            <TransferList
+              storeUuid={fromStoreUuid || null}
+              onChanged={() => { loadMovements(); loadProducts(); }}
             />
           )}
         </div>

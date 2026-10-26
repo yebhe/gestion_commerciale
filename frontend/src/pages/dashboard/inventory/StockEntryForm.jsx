@@ -1,14 +1,13 @@
 import { X } from 'lucide-react';
-import { inputClass, labelClass, btnPrimary, EMPTY_ENTRY } from './constants';
+import VariantSelect from './VariantSelect';
+import { inputClass, labelClass, btnPrimary, lineStock } from './constants';
 
 const StockEntryForm = ({
-  form, products, error, submitting, storeUuid,
+  form, products, error, submitting, storeUuid, warehouseUuid,
   onChange, onSubmit, onClose,
 }) => {
-  const storeStock = (p) => {
-    if (!storeUuid) return p.stock_quantity;
-    return p.stock_by_store?.find((s) => s.store?.uuid === storeUuid)?.quantity ?? 0;
-  };
+  const storeStock = (p) =>
+    lineStock(p, { storeUuid, warehouseUuid, variantUuid: form.variant });
   return (
   <div className="bg-surface rounded-2xl border border-border p-6 mb-6 space-y-4 relative">
     <button type="button" onClick={onClose}
@@ -30,6 +29,8 @@ const StockEntryForm = ({
         ))}
       </select>
     </div>
+
+    <VariantSelect productUuid={form.product} value={form.variant} onChange={onChange} />
 
     <div>
       <label className={labelClass}>Quantité à ajouter</label>

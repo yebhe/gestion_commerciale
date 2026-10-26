@@ -6,8 +6,11 @@ from django.utils import timezone
 
 from audit.utils import log_action
 from users.permissions import HasPermission
-from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer
+from .models import Category, Lot, Product, ProductVariant
+from .serializers import (
+    CategorySerializer, LotSerializer, ProductSerializer,
+    ProductVariantSerializer,
+)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -131,3 +134,80 @@ class ProductViewSet(viewsets.ModelViewSet):
             )
         log_action(request, 'delete', 'Product', product_uuid, {'name': product_name})
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class _NestedProductMixin:
+    """Résout le produit parent depuis l'URL /products/{product_uuid}/...
+    et le injecte dans le contexte serializer (étape 4.4)."""
+
+    lookup_url_kwarg = 'uuid'
+
+    def get_product(self):
+        if not hasattr(self, '_product'):
+            self._product = Product.objects.get(
+                uuid=self.kwargs['product_uuid'],
+                company=self.request.company,
+                is_deleted=False,
+            )
+        return self._product
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['product'] = self.get_product()
+        return ctx
+
+
+class ProductVariantViewSet(_NestedProductMixin, viewsets.ModelViewSet):
+    """CRUD /products/{uuid}/variants/ — permissions products.* (4.4)."""
+    serializer_class = ProductVariantSerializer
+    permission_classes = (HasPermission,)
+    lookup_field = 'uuid'
+    permission_map = {
+        'list': 'products.view',
+        'retrieve': 'products.view',
+        'create': 'products.update',
+        'update': 'products.update',
+        'partial_update': 'products.update',
+        'destroy': 'products.update',
+    }
+
+    def get_queryset(self):
+        return ProductVariant.objects.filter(
+            product=self.get_product(), is_deleted=False)
+
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.company,
+                        product=self.get_product())
+
+    def perform_destroy(self, instance):
+        instance.is_deleted = True
+        instance.deleted_at = timezone.now()
+        instance.save(update_fields=['is_deleted', 'deleted_at'])
+
+
+class LotViewSet(_NestedProductMixin, viewsets.ModelViewSet):
+    """CRUD /products/{uuid}/lots/ — permissions lots.* (4.4)."""
+    serializer_class = LotSerializer
+    permission_classes = (HasPermission,)
+    lookup_field = 'uuid'
+    permission_map = {
+        'list': 'lots.view',
+        'retrieve': 'lots.view',
+        'create': 'lots.create',
+        'update': 'lots.update',
+        'partial_update': 'lots.update',
+        'destroy': 'lots.update',
+    }
+
+    def get_queryset(self):
+        return Lot.objects.filter(
+            product=self.get_product(), is_deleted=False)
+
+    def perform_create(self, serializer):
+        serializer.save(company=self.request.company,
+                        product=self.get_product())
+
+    def perform_destroy(self, instance):
+        instance.is_deleted = True
+        instance.deleted_at = timezone.now()
+        instance.save(update_fields=['is_deleted', 'deleted_at'])

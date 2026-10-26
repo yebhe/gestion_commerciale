@@ -7,6 +7,7 @@ import { productsAPI, storesAPI, salesAPI, mediaUrl } from '../../lib/api';
 import { useOfflineMutation } from '../../pwa/useOfflineMutation';
 import { useSyncRefresh } from '../../pwa';
 import { applyPendingStock } from '../../pwa/applyPendingStock';
+import { loadVariantsWithCache } from '../../pwa/preloadCache';
 import db from '../../pwa/db';
 import networkManager from '../../pwa/networkManager';
 
@@ -45,6 +46,8 @@ const POS = () => {
   const [lastSale, setLastSale] = useState(null);
   const [mobileMoneySale, setMobileMoneySale] = useState(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
+  // Sélecteur de variante (étape 4.5) : { product, variants } ou null.
+  const [variantPicker, setVariantPicker] = useState(null);
   const { mutate: createSale } = useOfflineMutation('pos', 'CREATE');
 
   const canPrint = hasPermission('pos.print_receipt');
@@ -122,28 +125,54 @@ const POS = () => {
     return product.stock_by_store?.find((s) => s.store?.uuid === storeUuid)?.quantity ?? product.stock_quantity ?? 0;
   };
 
-  const addToCart = (product) => {
+  // Clé de ligne panier : produit + variante éventuelle (étape 4.5).
+  const cartKey = (product, variant) =>
+    `${product.uuid}:${variant?.uuid || ''}`;
+
+  const pushToCart = (product, variant = null) => {
+    const key = cartKey(product, variant);
+    const price = variant?.selling_price ?? product.selling_price;
     const available = getStoreStock(product);
-    const inCart = cart.find((item) => item.uuid === product.uuid)?.qty || 0;
+    const inCart = cart.find((item) => item.key === key)?.qty || 0;
     if (inCart + 1 > available) {
       setError(`Stock insuffisant pour « ${product.name} » : ${available} disponible(s).`);
       return;
     }
     setError('');
     setCart((prev) => {
-      const existing = prev.find((item) => item.uuid === product.uuid);
+      const existing = prev.find((item) => item.key === key);
       if (existing) {
         return prev.map((item) =>
-          item.uuid === product.uuid ? { ...item, qty: item.qty + 1 } : item
+          item.key === key ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [...prev, { ...product, qty: 1 }];
+      return [...prev, {
+        ...product, key, qty: 1,
+        variant: variant || null,
+        variant_label: variant
+          ? Object.values(variant.attributes || {}).join(' / ') || variant.sku
+          : null,
+        selling_price: price,
+      }];
     });
   };
 
-  const updateQty = (uuid, delta) => {
+  const addToCart = async (product) => {
+    // Si le produit a des variantes actives, on propose le choix (4.5).
+    try {
+      const variants = (await loadVariantsWithCache(product.uuid))
+        .filter((v) => v.is_active !== false);
+      if (variants.length) {
+        setVariantPicker({ product, variants });
+        return;
+      }
+    } catch { /* pas de variantes accessibles : produit générique */ }
+    pushToCart(product);
+  };
+
+  const updateQty = (key, delta) => {
     setCart((prev) => {
-      const item = prev.find((i) => i.uuid === uuid);
+      const item = prev.find((i) => i.key === key);
       if (item && delta > 0) {
         const available = getStoreStock(item);
         if (item.qty + delta > available) {
@@ -153,12 +182,12 @@ const POS = () => {
       }
       setError('');
       return prev
-        .map((item) => (item.uuid === uuid ? { ...item, qty: item.qty + delta } : item))
+        .map((item) => (item.key === key ? { ...item, qty: item.qty + delta } : item))
         .filter((item) => item.qty > 0);
     });
   };
 
-  const removeFromCart = (uuid) => setCart((prev) => prev.filter((item) => item.uuid !== uuid));
+  const removeFromCart = (key) => setCart((prev) => prev.filter((item) => item.key !== key));
 
   const total = cart.reduce((sum, item) => sum + Number(item.selling_price) * item.qty, 0);
 
@@ -182,6 +211,7 @@ const POS = () => {
         status: paymentMethod === 'mobile_money' ? 'pending' : 'completed',
         items: cart.map((item) => ({
           product: item.uuid,
+          variant: item.variant?.uuid || undefined,
           quantity: item.qty,
           unit_price: item.selling_price,
         })),
@@ -351,15 +381,20 @@ const POS = () => {
           ) : (
             <ul className="divide-y divide-gray-100 mb-4 max-h-[40vh] overflow-y-auto">
               {cart.map((item) => (
-                <li key={item.uuid} className="py-3 flex items-center justify-between gap-2">
+                <li key={item.key} className="py-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-900 text-[15px] truncate">{item.name}</p>
+                    <p className="font-medium text-gray-900 text-[15px] truncate">
+                      {item.name}
+                      {item.variant_label && (
+                        <span className="text-primary-600 font-normal"> · {item.variant_label}</span>
+                      )}
+                    </p>
                     <p className="text-gray-500 text-sm">{formatFCFA(item.selling_price)}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       type="button"
-                      onClick={() => updateQty(item.uuid, -1)}
+                      onClick={() => updateQty(item.key, -1)}
                       aria-label="Diminuer la quantité"
                       className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200"
                     >
@@ -368,7 +403,7 @@ const POS = () => {
                     <span className="w-6 text-center font-semibold">{item.qty}</span>
                     <button
                       type="button"
-                      onClick={() => updateQty(item.uuid, 1)}
+                      onClick={() => updateQty(item.key, 1)}
                       aria-label="Augmenter la quantité"
                       className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200"
                     >
@@ -376,7 +411,7 @@ const POS = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removeFromCart(item.uuid)}
+                      onClick={() => removeFromCart(item.key)}
                       aria-label="Retirer du panier"
                       className="w-9 h-9 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
                     >
@@ -424,6 +459,45 @@ const POS = () => {
           </div>
         </section>
       </main>
+
+      {/* Choix de variante (étape 4.5) : affiché quand le produit
+          ajouté possède des variantes actives. */}
+      {variantPicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">
+                {variantPicker.product.name} — choisir une variante
+              </h3>
+              <button type="button" onClick={() => setVariantPicker(null)}
+                className="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+              {variantPicker.variants.map((v) => (
+                <button
+                  key={v.uuid}
+                  type="button"
+                  onClick={() => {
+                    pushToCart(variantPicker.product, v);
+                    setVariantPicker(null);
+                  }}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 text-left"
+                >
+                  <span className="font-medium text-gray-900">
+                    {Object.entries(v.attributes || {})
+                      .map(([k, val]) => `${k}: ${val}`).join(' / ') || v.sku || 'Variante'}
+                  </span>
+                  <span className="text-primary-700 font-semibold">
+                    {formatFCFA(v.selling_price ?? variantPicker.product.selling_price)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

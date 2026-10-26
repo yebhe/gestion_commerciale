@@ -1,15 +1,41 @@
-import { Boxes, Package, AlertTriangle, Search } from 'lucide-react';
+import { Boxes, Package, AlertTriangle, Search, Truck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Loader from '../../../contexts/Loader';
 
-function getStock(product, storeUuid) {
+function getStock(product, storeUuid, warehouseUuid) {
+  if (warehouseUuid) {
+    return (product.stock_by_warehouse || [])
+      .filter((s) => s.warehouse?.uuid === warehouseUuid)
+      .reduce((sum, s) => sum + (s.quantity || 0), 0);
+  }
   if (!storeUuid) return product.stock_quantity || 0;
   const found = product.stock_by_store?.find((s) => s.store?.uuid === storeUuid);
   return found?.quantity ?? 0;
 }
 
-export default function StockAvailabilityView({ products, storeUuid, storeName, loading }) {
+const warehouseStock = (product, warehouseUuid) =>
+  (product.stock_by_warehouse || [])
+    .filter((s) => s.warehouse?.uuid === warehouseUuid)
+    .reduce((sum, s) => sum + (s.quantity || 0), 0);
+
+export default function StockAvailabilityView({ products, storeUuid, storeName, warehouseUuid, warehouseName, warehouses = [], inTransit = [], loading }) {
   const [search, setSearch] = useState('');
+
+  // Quantités en transit par produit (expédiées vers ce magasin/entrepôt,
+  // pas encore reçues — 3.9). inTransit est déjà filtré côté backend.
+  const transitByProduct = useMemo(() => {
+    const map = {};
+    for (const row of inTransit || []) {
+      const uuid = row.product?.uuid;
+      if (!uuid) continue;
+      map[uuid] = (map[uuid] || 0) + (row.in_transit || 0);
+    }
+    return map;
+  }, [inTransit]);
+  const totalTransit = useMemo(
+    () => Object.values(transitByProduct).reduce((a, b) => a + b, 0),
+    [transitByProduct],
+  );
 
   const filtered = useMemo(() => {
     const list = products.filter((p) => {
@@ -24,18 +50,20 @@ export default function StockAvailabilityView({ products, storeUuid, storeName, 
     let total = 0;
     let low = 0;
     for (const p of filtered) {
-      const qty = getStock(p, storeUuid);
+      const qty = getStock(p, storeUuid, warehouseUuid);
       total += qty;
       if (qty <= (p.low_stock_threshold || 5)) low++;
     }
     return { total, lowStockCount: low };
-  }, [filtered, storeUuid]);
+  }, [filtered, storeUuid, warehouseUuid]);
+
+  const multiWarehouse = (warehouses || []).filter((w) => w.is_active !== false).length > 1;
 
   if (loading) return <Loader fullscreen={false} />;
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-surface rounded-2xl border border-border p-5 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
             <Boxes size={24} className="text-blue-600" />
@@ -50,8 +78,17 @@ export default function StockAvailabilityView({ products, storeUuid, storeName, 
             <Package size={24} className="text-green-600" />
           </div>
           <div>
-            <p className="text-muted text-sm">Stock total {storeName ? `· ${storeName}` : ''}</p>
+            <p className="text-muted text-sm">Stock total {warehouseName ? `· ${warehouseName}` : storeName ? `· ${storeName}` : ''}</p>
             <p className="text-2xl font-bold text-foreground">{total}</p>
+          </div>
+        </div>
+        <div className="bg-surface rounded-2xl border border-border p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
+            <Truck size={24} className="text-orange-600" />
+          </div>
+          <div>
+            <p className="text-muted text-sm">En transit</p>
+            <p className="text-2xl font-bold text-foreground">{totalTransit}</p>
           </div>
         </div>
         <div className="bg-surface rounded-2xl border border-border p-5 flex items-center gap-4">
@@ -87,13 +124,17 @@ export default function StockAvailabilityView({ products, storeUuid, storeName, 
                   <th className="py-3 px-4 font-medium">Produit</th>
                   <th className="py-3 px-4 font-medium">Code-barres</th>
                   <th className="py-3 px-4 font-medium text-right">Prix de vente</th>
-                  <th className="py-3 px-4 font-medium text-right">Stock {storeName ? `· ${storeName}` : 'global'}</th>
+                  <th className="py-3 px-4 font-medium text-right">Stock {warehouseName ? `· ${warehouseName}` : storeName ? `· ${storeName}` : 'global'}</th>
+                  <th className="py-3 px-4 font-medium text-right">En transit</th>
+                  {multiWarehouse && warehouses.filter((w) => w.is_active !== false).map((w) => (
+                    <th key={w.uuid} className="py-3 px-4 font-medium text-right text-muted">{w.name}</th>
+                  ))}
                   <th className="py-3 px-4 font-medium text-center">Statut</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((p) => {
-                  const qty = getStock(p, storeUuid);
+                  const qty = getStock(p, storeUuid, warehouseUuid);
                   const low = qty <= (p.low_stock_threshold || 5);
                   return (
                     <tr key={p.uuid} className="hover:bg-gray-50/50">
@@ -101,6 +142,21 @@ export default function StockAvailabilityView({ products, storeUuid, storeName, 
                       <td className="py-3 px-4 text-muted">{p.barcode || '—'}</td>
                       <td className="py-3 px-4 text-right text-foreground">{Number(p.selling_price || 0).toLocaleString('fr-FR')} FCFA</td>
                       <td className="py-3 px-4 text-right font-bold text-foreground">{qty}</td>
+                      <td className="py-3 px-4 text-right">
+                        {transitByProduct[p.uuid] ? (
+                          <span className="inline-flex items-center gap-1 text-orange-600 font-medium">
+                            <Truck size={14} />
+                            {transitByProduct[p.uuid]}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      {multiWarehouse && warehouses.filter((w) => w.is_active !== false).map((w) => (
+                        <td key={w.uuid} className="py-3 px-4 text-right text-muted">
+                          {warehouseStock(p, w.uuid)}
+                        </td>
+                      ))}
                       <td className="py-3 px-4 text-center">
                         {low ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">

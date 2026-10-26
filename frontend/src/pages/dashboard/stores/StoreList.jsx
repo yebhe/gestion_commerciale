@@ -1,6 +1,6 @@
 import {
   Store as StoreIcon, Pencil, Trash2, MapPin, Phone,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, Warehouse,
 } from 'lucide-react';
 import Loader from '../../../contexts/Loader';
 import { mediaUrl } from '../../../lib/api';
@@ -8,8 +8,8 @@ import { btnSecondary, btnIcon, btnDanger } from './constants';
 
 const StoreList = ({
   stores, loading, search, page, count, next, prev,
-  canUpdate, canDelete, isCompanyScope, assignedStore,
-  onSearchChange, onPageChange, onEdit, onDelete,
+  canUpdate, canDelete, isCompanyScope, assignedStore, canViewWarehouses,
+  onSearchChange, onPageChange, onEdit, onDelete, onWarehouses,
 }) => (
   <>
     {!isCompanyScope && assignedStore && (
@@ -75,6 +75,11 @@ const StoreList = ({
             </div>
 
             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
+              {canViewWarehouses && (
+                <button onClick={() => onWarehouses(store)} className={btnIcon} title="Entrepôts">
+                  <Warehouse size={22} />
+                </button>
+              )}
               {canUpdate && (
                 <button onClick={() => onEdit(store)} className={btnIcon}><Pencil size={22} /></button>
               )}

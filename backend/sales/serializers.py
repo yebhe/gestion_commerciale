@@ -5,8 +5,9 @@ from companies.models import Store
 from companies.serializers import StoreSerializer
 from customers.models import Customer
 from customers.serializers import CustomerSerializer
-from products.models import Product, StockLevel
+from products.models import Lot, Product, ProductVariant, StockLevel
 from products.serializers import ProductSerializer
+from inventory.services import apply_movement, reserve_stock, store_available
 from .models import Sale, SaleItem, Receipt, MobileMoneyPayment, POSSession
 
 
@@ -14,10 +15,19 @@ class SaleItemSerializer(serializers.ModelSerializer):
     product = serializers.SlugRelatedField(
         slug_field='uuid', queryset=Product.objects.all(),
     )
+    variant = serializers.SlugRelatedField(
+        slug_field='uuid', queryset=ProductVariant.objects.all(),
+        required=False, allow_null=True,
+    )
+    lot = serializers.SlugRelatedField(
+        slug_field='uuid', queryset=Lot.objects.all(),
+        required=False, allow_null=True,
+    )
 
     class Meta:
         model = SaleItem
-        fields = ['id', 'product', 'quantity', 'unit_price', 'discount']
+        fields = ['id', 'product', 'variant', 'lot', 'quantity',
+                  'unit_price', 'discount']
 
     def validate_quantity(self, value):
         if value is None or value <= 0:
@@ -27,6 +37,16 @@ class SaleItemSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['product'] = ProductSerializer(instance.product).data if instance.product else None
+        data['variant'] = (
+            {'uuid': str(instance.variant.uuid),
+             'attributes': instance.variant.attributes,
+             'sku': instance.variant.sku}
+            if instance.variant else None
+        )
+        data['lot'] = (
+            {'uuid': str(instance.lot.uuid), 'number': instance.lot.number}
+            if instance.lot else None
+        )
         return data
 
     def validate_product(self, product):
@@ -39,6 +59,29 @@ class SaleItemSerializer(serializers.ModelSerializer):
                 "Ce produit n'appartient pas à cette entreprise."
             )
         return product
+
+    def validate(self, data):
+        # R59 : variante et lot doivent appartenir au produit de la ligne.
+        product = data.get('product') or getattr(self.instance, 'product', None)
+        variant = data.get('variant')
+        lot = data.get('lot')
+        if variant is not None and product is not None \
+                and variant.product_id != product.id:
+            raise serializers.ValidationError({
+                'variant': "Cette variante n'appartient pas au produit."
+            })
+        if lot is not None and product is not None \
+                and lot.product_id != product.id:
+            raise serializers.ValidationError({
+                'lot': "Ce lot n'appartient pas au produit."
+            })
+        if (variant is not None and lot is not None
+                and lot.variant_id is not None
+                and lot.variant_id != variant.id):
+            raise serializers.ValidationError({
+                'lot': "Ce lot n'est pas rattaché à la variante indiquée."
+            })
+        return data
 
 
 class ReceiptSerializer(serializers.ModelSerializer):
@@ -113,8 +156,8 @@ class SaleSerializer(serializers.ModelSerializer):
                 product = item.get('product')
                 qty = item.get('quantity', 0)
                 if product:
-                    level = StockLevel.objects.filter(product=product, store=store).first()
-                    available = level.quantity if level else 0
+                    # Disponible = physique - réservé (étape 5, R65-R66).
+                    available = store_available(product=product, store=store)
                     if qty > available:
                         raise serializers.ValidationError({
                             'items': f"Stock insuffisant pour « {product.name} » : "
@@ -131,10 +174,7 @@ class SaleSerializer(serializers.ModelSerializer):
                 for item_data in items_data:
                     product = item_data.get('product')
                     qty = item_data.get('quantity', 0)
-                    level = StockLevel.objects.select_for_update().filter(
-                        product=product, store=store,
-                    ).first()
-                    available = level.quantity if level else 0
+                    available = store_available(product=product, store=store)
                     if qty > available:
                         raise serializers.ValidationError({
                             'items': f"Stock insuffisant pour « {product.name} » : "
@@ -143,16 +183,40 @@ class SaleSerializer(serializers.ModelSerializer):
 
             sale = Sale.objects.create(**validated_data)
             total = 0
+            request = self.context.get('request')
+            is_pending = sale.status == 'pending'
             for item_data in items_data:
                 item = SaleItem.objects.create(sale=sale, **item_data)
                 total += item.quantity * item.unit_price - item.discount
                 if store:
-                    level, _ = StockLevel.objects.select_for_update().get_or_create(
-                        product=item.product, store=store,
-                        defaults={'quantity': 0},
-                    )
-                    level.quantity = max(0, level.quantity - item.quantity)
-                    level.save(update_fields=['quantity'])
+                    if is_pending:
+                        # Vente en attente (Mobile Money) : le stock est
+                        # réservé, pas sorti (étape 5.3). Consommé au succès
+                        # du webhook, libéré à l'échec.
+                        reserve_stock(
+                            company=sale.company,
+                            store=store,
+                            product=item.product,
+                            variant=item.variant,
+                            lot=item.lot,
+                            quantity=item.quantity,
+                            source=sale,
+                            user=getattr(request, 'user', None),
+                        )
+                    else:
+                        apply_movement(
+                            company=sale.company,
+                            store=store,
+                            product=item.product,
+                            variant=item.variant,
+                            lot=item.lot,
+                            movement_type='out',
+                            quantity=item.quantity,
+                            user=getattr(request, 'user', None),
+                            note=f"Vente {sale.uuid}",
+                            reason='sale',
+                            source=sale,
+                        )
             sale.total_amount = total
             sale.save(update_fields=['total_amount'])
             receipt_number = f"REC-{sale.uuid.hex[:12].upper()}"

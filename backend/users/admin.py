@@ -202,7 +202,15 @@ class MembershipAdmin(admin.ModelAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-        company = obj.company_id if obj else None
+        if obj and obj.company_id:
+            company = obj.company_id
+        else:
+            # En ajout : l'entreprise vient du POST (validation) ou du GET.
+            company = (
+                request.POST.get('company')
+                or request.GET.get('company')
+                or None
+            )
         if company:
             form.base_fields['role'].queryset = Role.objects.filter(company_id=company)
             form.base_fields['store'].queryset = Store.objects.filter(company_id=company)

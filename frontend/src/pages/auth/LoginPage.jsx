@@ -29,15 +29,15 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+      <div className="max-w-md w-full space-y-8 bg-surface p-8 rounded-2xl shadow-sm border border-border">
         <div className="flex flex-col items-center">
           <div className="w-14 h-14 rounded-xl bg-primary-600 flex items-center justify-center mb-4">
             <Store size={28} className="text-white" />
           </div>
-          <h2 className="text-center text-2xl font-bold text-gray-900">
+          <h2 className="text-center text-2xl font-bold text-foreground">
             Connexion
           </h2>
-          <p className="mt-1 text-center text-sm text-gray-500">
+          <p className="mt-1 text-center text-sm text-muted">
             Gestion Magasins
           </p>
         </div>
@@ -51,7 +51,7 @@ const LoginPage = () => {
           
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
                 Email
               </label>
               <input
@@ -62,12 +62,12 @@ const LoginPage = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-[15px] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-4 py-3 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="vous@entreprise.com"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-foreground mb-1">
                 Mot de passe
               </label>
               <input
@@ -78,7 +78,7 @@ const LoginPage = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-[15px] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-4 py-3 border border-border rounded-lg text-[15px] bg-surface text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 placeholder="••••••••"
               />
             </div>

@@ -2,11 +2,20 @@ from django.db import models
 
 
 class CompanySettings(models.Model):
+    MODE_CHOICES = [
+        ('simple', 'Simple'),
+        ('advanced', 'Avancé'),
+    ]
+
     company = models.OneToOneField(
         'companies.Company',
         on_delete=models.CASCADE,
         related_name='settings',
     )
+    # Mode simple : un entrepôt par magasin, pas d'emplacements,
+    # transferts immédiats, pas de variantes/lots, achats = réception
+    # directe (_docs/15, étape 16.1).
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='simple')
     background_color = models.CharField(
         max_length=7,
         default='#f9fafb',
@@ -36,6 +45,12 @@ class StoreSettings(models.Model):
         default='',
         help_text="Couleur de fond choisie pour ce magasin (format hex, ex: #3b82f6). Vide = hérite de l'entreprise.",
     )
+    # Feature flags par magasin (_docs/15, étape 16.1) : activables
+    # individuellement même en mode simple.
+    uses_locations = models.BooleanField(default=False)
+    uses_lots = models.BooleanField(default=False)
+    uses_variants = models.BooleanField(default=False)
+    uses_purchase_orders = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

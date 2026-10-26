@@ -1,16 +1,17 @@
 import { X } from 'lucide-react';
-import { inputClass, labelClass, btnPrimary } from './constants';
+import VariantSelect from './VariantSelect';
+import { inputClass, labelClass, btnPrimary, lineStock } from './constants';
 
 const StockTransferForm = ({
-  form, products, stores, fromStoreUuid, error, submitting,
+  form, products, stores, fromStoreUuid, warehouseUuid, error, submitting,
   onChange, onSubmit, onClose,
 }) => {
+  // onSubmit(immediate:boolean) — true = "Transférer maintenant",
+  // false = "Créer une demande" (workflow avec statuts).
   const fromStore = fromStoreUuid || form.from_store;
   const fromStoreObj = stores.find((s) => s.uuid === fromStore);
-  const fromStoreStock = (p) => {
-    if (!fromStore) return p.stock_quantity;
-    return p.stock_by_store?.find((s) => s.store?.uuid === fromStore)?.quantity || 0;
-  };
+  const fromStoreStock = (p) =>
+    lineStock(p, { storeUuid: fromStore, warehouseUuid, variantUuid: form.variant });
   return (
   <div className="bg-surface rounded-2xl border border-border p-6 mb-6 space-y-4 relative">
     <button type="button" onClick={onClose}
@@ -32,6 +33,8 @@ const StockTransferForm = ({
         ))}
       </select>
     </div>
+
+    <VariantSelect productUuid={form.product} value={form.variant} onChange={onChange} />
 
     <div>
       <label className={labelClass}>Magasin source</label>
@@ -64,10 +67,16 @@ const StockTransferForm = ({
         onChange={onChange} className={inputClass} placeholder="Ex: 20" />
     </div>
 
-    <button type="button" onClick={onSubmit} disabled={submitting}
-      className={`${btnPrimary} ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}>
-      {submitting ? 'Enregistrement...' : 'Enregistrer le transfert'}
-    </button>
+    <div className="flex flex-wrap gap-3">
+      <button type="button" onClick={() => onSubmit(true)} disabled={submitting}
+        className={`${btnPrimary} ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        {submitting ? 'Enregistrement...' : 'Transférer maintenant'}
+      </button>
+      <button type="button" onClick={() => onSubmit(false)} disabled={submitting}
+        className="flex items-center gap-2 h-12 px-6 rounded-xl border border-border text-foreground text-base font-medium hover:bg-gray-50 transition-colors disabled:opacity-50">
+        Créer une demande
+      </button>
+    </div>
   </div>
   );
 };

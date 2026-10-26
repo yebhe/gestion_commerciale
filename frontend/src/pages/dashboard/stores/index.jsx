@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
 import { storesAPI } from '../../../lib/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
@@ -7,6 +7,7 @@ import AlertDialog from '../../../components/ui/AlertDialog';
 import { EMPTY_FORM, btnPrimary } from './constants';
 import StoreForm from './StoreForm';
 import StoreList from './StoreList';
+import WarehouseSection from './WarehouseSection';
 
 const StoresModule = () => {
   const { hasPermission, scope, assignedStore } = useAuth();
@@ -36,6 +37,8 @@ const StoresModule = () => {
   const canCreate = hasPermission('stores.create');
   const canUpdate = hasPermission('stores.update');
   const canDelete = hasPermission('stores.delete');
+  const canViewWarehouses = hasPermission('warehouses.view');
+  const [warehouseStore, setWarehouseStore] = useState(null);
 
   const loadStores = async () => {
     setLoadingList(true);
@@ -142,7 +145,18 @@ const StoresModule = () => {
         )}
       </div>
 
-      {showForm ? (
+      {warehouseStore ? (
+        <div>
+          <button type="button" onClick={() => setWarehouseStore(null)}
+            className="flex items-center gap-2 mb-5 text-muted hover:text-foreground text-base font-medium">
+            <ArrowLeft size={20} /> Retour aux magasins
+          </button>
+          <h2 className="text-xl font-bold text-foreground mb-4">
+            Entrepôts — {warehouseStore.name}
+          </h2>
+          <WarehouseSection store={warehouseStore} />
+        </div>
+      ) : showForm ? (
         <StoreForm
           editingStore={editingStore} form={form} logoFile={logoFile}
           error={error} submitting={submitting}
@@ -156,8 +170,10 @@ const StoresModule = () => {
           page={storePage} count={storeCount} next={storeNext} prev={storePrev}
           canUpdate={canUpdate} canDelete={canDelete}
           isCompanyScope={isCompanyScope} assignedStore={assignedStore}
+          canViewWarehouses={canViewWarehouses}
           onSearchChange={setStoreSearch} onPageChange={setStorePage}
           onEdit={openEditForm} onDelete={handleDelete}
+          onWarehouses={setWarehouseStore}
         />
       )}
 

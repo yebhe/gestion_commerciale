@@ -49,6 +49,13 @@ class SaleItem(models.Model):
     id = models.BigAutoField(primary_key=True)
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='sale_items')
+    # Variante / lot vendus (étape 4.2) : null = produit générique.
+    variant = models.ForeignKey(
+        'products.ProductVariant', on_delete=models.PROTECT,
+        related_name='sale_items', null=True, blank=True)
+    lot = models.ForeignKey(
+        'products.Lot', on_delete=models.PROTECT,
+        related_name='sale_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)

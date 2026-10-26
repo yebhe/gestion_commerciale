@@ -1,7 +1,6 @@
 import json
 
 from django.conf import settings
-from django.db import transaction
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -12,7 +11,10 @@ from rest_framework.response import Response
 
 from audit.utils import log_action
 from users.permissions import HasPermission
-from products.models import StockLevel
+from django.db import transaction
+from inventory.services import (
+    apply_movement, consume_reservations, release_reservations,
+)
 from .chapchappay import ChapChapPayError, create_ecommerce_operation, verify_webhook_signature
 from .models import MobileMoneyPayment, Sale, POSSession
 from .serializers import SaleSerializer, POSSessionSerializer
@@ -58,13 +60,18 @@ class SaleViewSet(viewsets.ModelViewSet):
             log_action(self.request, sale.status, 'Sale', sale.uuid, {
                 'total_amount': str(sale.total_amount), 'previous_status': old_status,
             })
+        elif old_status == 'pending' and sale.status in ('cancelled', 'refunded'):
+            # Vente en attente annulée : libère les réservations (étape 5.3).
+            release_reservations(sale)
 
     def perform_destroy(self, instance):
         sale_uuid = instance.uuid
         total_amount = str(instance.total_amount)
         was_completed = instance.status == 'completed'
         if was_completed:
-            self._restore_stock(instance)
+            self._restore_stock(instance, request=self.request)
+        elif instance.status == 'pending':
+            release_reservations(instance)
         instance.delete()
         if was_completed:
             log_action(self.request, 'cancel', 'Sale', sale_uuid, {'total_amount': total_amount})
@@ -108,18 +115,46 @@ class SaleViewSet(viewsets.ModelViewSet):
         )
         return Response(SaleSerializer(sale, context={'request': request}).data)
 
-    def _restore_stock(self, sale):
+    def _restore_stock(self, sale, request=None):
         store = sale.store
         if not store:
             return
-        with transaction.atomic():
-            for item in sale.items.all():
-                level, _ = StockLevel.objects.select_for_update().get_or_create(
-                    product=item.product, store=store,
-                    defaults={'quantity': 0},
-                )
-                level.quantity += item.quantity
-                level.save(update_fields=['quantity'])
+        for item in sale.items.all():
+            apply_movement(
+                company=sale.company,
+                store=store,
+                product=item.product,
+                variant=item.variant,
+                lot=item.lot,
+                movement_type='in',
+                quantity=item.quantity,
+                user=getattr(request, 'user', None),
+                note=f"Annulation vente {sale.uuid}",
+                reason='sale_cancel',
+                source=sale,
+                request=request,
+            )
+
+    def _deduct_stock(self, sale, request=None):
+        """Sort le stock d'une vente en attente devenue payée (étape 5.3)."""
+        store = sale.store
+        if not store:
+            return
+        for item in sale.items.all():
+            apply_movement(
+                company=sale.company,
+                store=store,
+                product=item.product,
+                variant=item.variant,
+                lot=item.lot,
+                movement_type='out',
+                quantity=item.quantity,
+                user=getattr(request, 'user', None),
+                note=f"Vente {sale.uuid}",
+                reason='sale',
+                source=sale,
+                request=request,
+            )
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -158,12 +193,20 @@ class ChapChapPayWebhookView(View):
 
         sale = payment.sale
         if new_status in self.SUCCESS_STATUSES and sale.status == 'pending':
-            sale.status = 'completed'
-            sale.save(update_fields=['status'])
+            # Paiement confirmé : sortie de stock réelle + réservations
+            # consommées (étape 5.3).
+            with transaction.atomic():
+                SaleViewSet()._deduct_stock(sale)
+                consume_reservations(sale)
+                sale.status = 'completed'
+                sale.save(update_fields=['status'])
         elif new_status in self.FAILURE_STATUSES and sale.status == 'pending':
-            SaleViewSet()._restore_stock(sale)
-            sale.status = 'cancelled'
-            sale.save(update_fields=['status'])
+            # Échec : le stock n'a jamais été sorti, on libère les
+            # réservations (étape 5.3).
+            with transaction.atomic():
+                release_reservations(sale)
+                sale.status = 'cancelled'
+                sale.save(update_fields=['status'])
 
         return JsonResponse({'detail': 'ok'})
 

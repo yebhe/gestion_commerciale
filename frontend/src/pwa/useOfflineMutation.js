@@ -67,6 +67,7 @@ export function useOfflineMutation(moduleKey, operationType) {
     const opContext = {
       company_uuid: context.company_uuid || localStorage.getItem('current_company_uuid'),
       store_uuid: context.store_uuid || null,
+      warehouse_uuid: context.warehouse_uuid || finalPayload?.warehouse || null,
       user_uuid: context.user_uuid || user?.uuid,
       entity_type: entity_type,
       entity_uuid: finalEntityUuid,
@@ -138,6 +139,7 @@ async function updateLocalCache(entity_type, operation_type, op, responseData) {
         ...data,
         company_uuid,
         store_uuid: op.store_uuid,
+        warehouse_uuid: op.warehouse_uuid || data.warehouse || null,
         user_uuid: op.user_uuid,
         updated_at: new Date().toISOString(),
       });

@@ -108,6 +108,19 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Docker Desktop sous Windows : les événements fichiers ne remontent
+    // pas depuis les montages (OneDrive) — le polling est nécessaire,
+    // sinon Vite rate des changements et peut servir des modules
+    // incohérents (ERR_CONNECTION_RESET -> page blanche au refresh).
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
+    hmr: {
+      // Évite les déconnexions WebSocket quand la page est servie
+      // via le proxy nginx ou en accès direct sur :5173.
+      clientPort: 5173,
+    },
     proxy: {
       '/api': {
         target: 'http://backend:8000',

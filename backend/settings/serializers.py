@@ -8,7 +8,7 @@ from .models import CompanySettings, StoreSettings
 class CompanySettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanySettings
-        fields = ['background_color', 'created_at', 'updated_at']
+        fields = ['mode', 'background_color', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
     def validate_background_color(self, value):
@@ -22,7 +22,9 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
 class StoreSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoreSettings
-        fields = ['background_color', 'created_at', 'updated_at']
+        fields = ['background_color', 'uses_locations', 'uses_lots',
+                  'uses_variants', 'uses_purchase_orders',
+                  'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
     def validate_background_color(self, value):

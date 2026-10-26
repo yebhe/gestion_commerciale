@@ -72,4 +72,31 @@ class CompanySettingsView(generics.RetrieveUpdateAPIView):
         if not company:
             raise generics.PermissionDenied("Aucune entreprise sélectionnée.")
         theme = self._resolve_theme(request, company)
+        company_settings, _ = CompanySettings.objects.get_or_create(company=company)
+        theme['mode'] = company_settings.mode
+
+        # Feature flags du magasin courant (étape 16.1) : en mode
+        # advanced tout est actif ; en mode simple seuls les flags
+        # explicitement activés le sont.
+        store_uuid = request.query_params.get('store') or request.query_params.get('store_uuid')
+        flags = {
+            'uses_locations': False,
+            'uses_lots': False,
+            'uses_variants': False,
+            'uses_purchase_orders': False,
+        }
+        if store_uuid:
+            from companies.models import Store
+            try:
+                store = Store.objects.select_related('settings').get(
+                    uuid=store_uuid, company=company,
+                )
+                store_settings = store.settings
+                for key in flags:
+                    flags[key] = getattr(store_settings, key, False)
+            except (Store.DoesNotExist, StoreSettings.DoesNotExist):
+                pass
+        if company_settings.mode == 'advanced':
+            flags = {key: True for key in flags}
+        theme['features'] = flags
         return Response(theme)

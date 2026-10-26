@@ -101,7 +101,9 @@ const SYNC_ENTITIES = {
     CREATE: (payload) => api.post('/inventory/', payload),
   },
   stockTransfer: {
-    CREATE: (payload) => api.post('/inventory/transfer/', payload),
+    // Seul le transfert immédiat est autorisé hors ligne (3.10) ;
+    // le payload porte items[] + immediate=true.
+    CREATE: (payload) => api.post('/inventory/transfers/', { ...payload, immediate: true }),
   },
 };
 

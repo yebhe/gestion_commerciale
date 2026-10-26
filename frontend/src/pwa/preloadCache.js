@@ -55,6 +55,103 @@ export async function loadStoresWithCache() {
   }
 }
 
+/**
+ * Liste des entrepôts : API en ligne (avec mise en cache), IndexedDB sinon.
+ * @param {string} [storeUuid] - filtre optionnel par magasin.
+ */
+export async function loadWarehousesWithCache(storeUuid = null) {
+  const companyUuid = localStorage.getItem('current_company_uuid') || '';
+  const fromCache = async () => {
+    if (!companyUuid) return [];
+    let items = await db.warehouses.where('company_uuid').equals(companyUuid).toArray();
+    items = items.filter((w) => !w.is_deleted && w.is_active !== false);
+    if (storeUuid) items = items.filter((w) => w.store_uuid === storeUuid || w.store === storeUuid || w.store?.uuid === storeUuid);
+    return items;
+  };
+
+  if (!networkManager.getState().online) return fromCache();
+
+  try {
+    const all = await fetchAll('/inventory/warehouses/', storeUuid ? { store: storeUuid } : {});
+    if (companyUuid && all.length) {
+      const now = new Date().toISOString();
+      await db.warehouses.bulkPut(all.map((w) => ({
+        ...w,
+        company_uuid: companyUuid,
+        store_uuid: storeUuidOf(w, storeUuid),
+        updated_at: now,
+      })));
+    }
+    return all;
+  } catch {
+    return fromCache();
+  }
+}
+
+/**
+ * Variantes d'un produit : API en ligne (avec mise en cache), IndexedDB sinon.
+ * (_docs/15, étape 4.6)
+ */
+export async function loadVariantsWithCache(productUuid) {
+  const companyUuid = localStorage.getItem('current_company_uuid') || '';
+  const fromCache = async () => {
+    if (!companyUuid || !productUuid) return [];
+    const items = await db.variants
+      .where('product_uuid').equals(productUuid).toArray();
+    return items.filter((v) => !v.is_deleted);
+  };
+
+  if (!networkManager.getState().online) return fromCache();
+
+  try {
+    const all = await fetchAll(`/products/${productUuid}/variants/`);
+    if (companyUuid) {
+      const now = new Date().toISOString();
+      await db.variants.bulkPut(all.map((v) => ({
+        ...v,
+        company_uuid: companyUuid,
+        product_uuid: productUuid,
+        updated_at: now,
+      })));
+    }
+    return all;
+  } catch {
+    return fromCache();
+  }
+}
+
+/**
+ * Lots d'un produit : API en ligne (avec mise en cache), IndexedDB sinon.
+ */
+export async function loadLotsWithCache(productUuid) {
+  const companyUuid = localStorage.getItem('current_company_uuid') || '';
+  const fromCache = async () => {
+    if (!companyUuid || !productUuid) return [];
+    const items = await db.lots
+      .where('product_uuid').equals(productUuid).toArray();
+    return items.filter((l) => !l.is_deleted);
+  };
+
+  if (!networkManager.getState().online) return fromCache();
+
+  try {
+    const all = await fetchAll(`/products/${productUuid}/lots/`);
+    if (companyUuid) {
+      const now = new Date().toISOString();
+      await db.lots.bulkPut(all.map((l) => ({
+        ...l,
+        company_uuid: companyUuid,
+        product_uuid: productUuid,
+        variant_uuid: l.variant?.uuid || l.variant || null,
+        updated_at: now,
+      })));
+    }
+    return all;
+  } catch {
+    return fromCache();
+  }
+}
+
 let running = null;
 
 /**
@@ -89,6 +186,7 @@ async function _preload({ companyUuid, storeUuid = null, userUuid = null }) {
     ['customers', () => fetchAll('/customers/', storeParams), (items) => db.customers.bulkPut(tag(items))],
     ['suppliers', () => fetchAll('/suppliers/', storeParams), (items) => db.suppliers.bulkPut(tag(items))],
     ['stores', () => fetchAll('/companies/stores/'), (items) => db.stores.bulkPut(tag(items))],
+    ['warehouses', () => fetchAll('/inventory/warehouses/', storeParams), (items) => db.warehouses.bulkPut(tag(items))],
     ['stockMovements', () => fetchAll('/inventory/', storeParams), (items) => db.stockMovements.bulkPut(tag(items, (m) => ({
       movement_type: m.type || m.movement_type || null,
       is_transfer: !!m.is_transfer || (!!m.from_store && !!m.to_store),

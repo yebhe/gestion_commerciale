@@ -9,6 +9,7 @@ import UserChangeBlock from './pwa/UserChangeBlock';
 import LoginPage from './pages/auth/LoginPage';
 import Dashboard from './pages/dashboard/Dashboard';
 import POS from './pages/pos/POS';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const DASHBOARD_PATH = '/dashboard';
 
@@ -44,6 +45,7 @@ function PublicRoute({ children }) {
 
 function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <PWAProvider>
       <Router>
@@ -83,6 +85,7 @@ function App() {
       </Router>
       </PWAProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

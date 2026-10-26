@@ -11,7 +11,7 @@ const ProductList = ({
   isCompanyScope, selectedStoreUuid,
   canCreate, canEdit, canDelete,
   storeBadge, categories,
-  onSearchChange, onPageChange, onEdit, onDelete, onCreate,
+  onSearchChange, onPageChange, onEdit, onDelete, onCreate, onView,
 }) => {
   const categoryByUuid = (categories || []).reduce((acc, c) => { acc[c.uuid] = c; return acc; }, {});
   const storeStock = (p) => {
@@ -60,7 +60,9 @@ const ProductList = ({
       <ul className="divide-y divide-border bg-surface rounded-2xl border border-border">
         {products.map((product) => (
           <li key={product.uuid} className="flex items-center justify-between py-4 px-5">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 cursor-pointer flex-1 min-w-0"
+              onClick={() => onView?.(product)}
+              title="Voir le détail (variantes, lots)">
               <div className="w-14 h-14 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
                 {product.image ? (
                   <img src={mediaUrl(product.image)} alt={product.name} className="w-full h-full object-cover" />

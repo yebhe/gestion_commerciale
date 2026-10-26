@@ -18,6 +18,7 @@ import {
 import StoreSelector from './StoreSelector';
 import ProductForm from './ProductForm';
 import ProductList from './ProductList';
+import ProductDetailModal from './ProductDetailModal';
 import CategoryForm from './CategoryForm';
 import CategoryList from './CategoryList';
 
@@ -62,6 +63,8 @@ const ProductsModule = ({ sub, onBack }) => {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
+  // Fiche produit en lecture (variantes + lots) — étape 4.5.
+  const [viewingProduct, setViewingProduct] = useState(null);
   const { mutate: createCategory } = useOfflineMutation('categories', 'CREATE');
   const { mutate: updateCategory } = useOfflineMutation('categories', 'UPDATE');
   const { mutate: deleteCategory } = useOfflineMutation('categories', 'DELETE');
@@ -474,6 +477,7 @@ const ProductsModule = ({ sub, onBack }) => {
               storeBadge={storeBadge} categories={categories}
               onSearchChange={setProdSearch} onPageChange={setProdPage}
               onEdit={openEditProduct} onDelete={handleDeleteProduct} onCreate={openCreateProduct}
+              onView={setViewingProduct}
             />
           )}
         </div>
@@ -499,6 +503,13 @@ const ProductsModule = ({ sub, onBack }) => {
             />
           )}
         </div>
+      )}
+
+      {viewingProduct && (
+        <ProductDetailModal
+          product={viewingProduct}
+          onClose={() => setViewingProduct(null)}
+        />
       )}
 
       <ConfirmDialog
