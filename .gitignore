@@ -35,12 +35,13 @@ dist/
 Thumbs.db
 desktop.ini
 
+# ---- Docs internes ----
+_docs/
+RESUME_PROJET.txt
+*.txt
+!requirements.txt
+
 # ---- Divers ----
 build.log
 *.bak
 *.tmp
-
-# ----_docs----
-_docs/
-.txt 
-
