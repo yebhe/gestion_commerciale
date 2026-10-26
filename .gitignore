@@ -1,0 +1,46 @@
+# ---- Secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# ---- Django ----
+db.sqlite3
+*.log
+backend/staticfiles/
+backend/mediafiles/
+
+# ---- Node / Vite ----
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+*.local
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Divers ----
+build.log
+*.bak
+*.tmp
+
+# ----_docs----
+_docs/
+.txt 
+

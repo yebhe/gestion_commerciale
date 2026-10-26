@@ -14,6 +14,22 @@
 
 ---
 
+## Captures d'écran
+
+| Dashboard | Caisse (POS) |
+|:---:|:---:|
+| ![Dashboard](photos/1_dashboard.png) | ![Caisse](photos/2_caisse.png) |
+
+| Ajout produit | Architecture Docker |
+|:---:|:---:|
+| ![Ajout produit](photos/3_ajout_produit.png) | ![Containers Docker](photos/4_containers_docker.png) |
+
+| Code frontend | Code backend |
+|:---:|:---:|
+| ![Frontend](photos/5_code_front.png) | ![Backend](photos/6_code_backend.png) |
+
+---
+
 ## Fonctionnalités
 
 - **Multi-tenant** : plusieurs entreprises, plusieurs magasins, un utilisateur
